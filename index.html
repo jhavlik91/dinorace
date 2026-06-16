@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DinoRace — prototyp</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: #0b1020; font-family: system-ui, sans-serif; }
+    #app { position: fixed; inset: 0; }
+
+    /* HUD */
+    .hud { position: fixed; pointer-events: none; color: #fff; text-shadow: 2px 2px 0 #000; }
+    #topleft  { top: 16px; left: 16px; font-weight: 800; }
+    #topleft .species { font-size: 22px; letter-spacing: .5px; }
+    #topleft .attack  { font-size: 14px; opacity: .85; margin-top: 4px; }
+    #topright { top: 16px; right: 16px; text-align: right; font-weight: 800; }
+    #topright .lap  { font-size: 26px; }
+    #topright .pos  { font-size: 15px; opacity: .9; }
+    #speedo { bottom: 16px; right: 20px; font-size: 40px; font-weight: 900; }
+    #speedo small { font-size: 14px; opacity: .7; }
+
+    /* komiksová bublina při útoku */
+    #fx { position: fixed; inset: 0; pointer-events: none; }
+    .pow {
+      position: absolute; transform: translate(-50%,-50%) rotate(var(--r,0deg));
+      font-weight: 900; font-size: 38px; color: #ffe14d;
+      -webkit-text-stroke: 3px #000; text-stroke: 3px #000;
+      animation: popfx .5s ease-out forwards;
+    }
+    @keyframes popfx {
+      0%   { opacity: 0; transform: translate(-50%,-50%) scale(.3) rotate(var(--r,0deg)); }
+      30%  { opacity: 1; transform: translate(-50%,-50%) scale(1.2) rotate(var(--r,0deg)); }
+      100% { opacity: 0; transform: translate(-50%,-90%) scale(1) rotate(var(--r,0deg)); }
+    }
+
+    #help {
+      position: fixed; bottom: 16px; left: 16px; color: #cdd6ff;
+      font-size: 13px; line-height: 1.6; background: rgba(10,14,30,.55);
+      padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
+    }
+    #help b { color: #fff; }
+    kbd {
+      background: #1c2547; border: 1px solid #3a4a8a; border-bottom-width: 2px;
+      border-radius: 5px; padding: 1px 6px; font-family: ui-monospace, monospace; color: #fff;
+    }
+    #banner {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: #fff; font-weight: 900; font-size: 13vw; -webkit-text-stroke: 4px #000;
+      text-align: center; pointer-events: none; opacity: 0; transition: opacity .3s;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div class="hud" id="topleft">
+    <div class="species" data-species>—</div>
+    <div class="attack"  data-attack>útok: —</div>
+  </div>
+  <div class="hud" id="topright">
+    <div class="lap" data-lap>Kolo 1/2</div>
+    <div class="pos" data-pos>Pozice —/—</div>
+  </div>
+  <div class="hud" id="speedo"><span data-speed>0</span> <small>km/h</small></div>
+
+  <div id="fx"></div>
+  <div id="banner"></div>
+
+  <div id="help">
+    <b>Řízení:</b> <kbd>W</kbd>/<kbd>↑</kbd> plyn · <kbd>S</kbd>/<kbd>↓</kbd> brzda ·
+    <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> zatáčení ·
+    <kbd>mezerník</kbd> ÚTOK · <kbd>R</kbd> restart
+  </div>
+
+  <!-- Three.js přes importmap z CDN (žádný build) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
