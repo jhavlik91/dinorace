@@ -136,6 +136,22 @@ function nearestWaypoint(pos, fromIdx) {
   return best;
 }
 
+// nejkratší vzdálenost bodu k ose trati (po segmentech) – pro detekci terénu
+function distToPath(x, z) {
+  let min = Infinity;
+  for (let i = 0; i < N; i++) {
+    const a = PATH[i], b = PATH[(i + 1) % N];
+    const abx = b.x - a.x, abz = b.z - a.z;
+    const apx = x - a.x, apz = z - a.z;
+    const len2 = abx * abx + abz * abz || 1;
+    const t = THREE.MathUtils.clamp((apx * abx + apz * abz) / len2, 0, 1);
+    const cx = a.x + abx * t, cz = a.z + abz * t;
+    const d = Math.hypot(x - cx, z - cz);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
 function steerAI(r, dt) {
   // míří na bod o kus dál po trati (lookahead) + drobné kličkování
   const look = (r.wpIndex + 3) % N;
@@ -175,6 +191,13 @@ function integrate(r, dt) {
   // valivý odpor
   r.speed *= (1 - 0.6 * dt);
   r.speed = THREE.MathUtils.clamp(r.speed, 0, r.spec.topSpeed);
+
+  // mimo trať (tráva/terén) = pomalejší: strop rychlosti + větší odpor
+  r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
+  if (r.offTrack) {
+    r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5);
+    r.speed *= (1 - 1.1 * dt);
+  }
 
   const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
   r.pos.addScaledVector(fwd, r.speed * dt);
@@ -286,6 +309,8 @@ function updateHUD() {
   elLap.textContent = `Kolo ${Math.min(player.lap, LAPS)}/${LAPS}`;
   elPos.textContent = `Pozice ${place}/${TOTAL}`;
   elSpeed.textContent = Math.round(player.speed * 3.6 * 1.6); // ~"km/h" pro pocit
+  // mimo trať → rychloměr zežloutne jako varování
+  elSpeed.parentElement.style.color = player.offTrack ? '#e3b341' : '#fff';
   if (player.finished) {
     banner.textContent = place === 1 ? '🏆 VÍTĚZSTVÍ!' : 'CÍL!';
     banner.style.opacity = 1;
