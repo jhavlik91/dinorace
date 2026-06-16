@@ -21,6 +21,10 @@ const N = PATH.length;
 const LAPS = 2;
 
 // ---------- závodníci ----------
+const MAX_HP = 100;   // plné zdraví
+const HIT_DMG = 22;   // poškození za jeden zásah (~5 zásahů = K.O.)
+const KO_TIME = 3.5;  // jak dlouho je sražený dino "dole" (s)
+
 const TOTAL = 4;
 const racers = [];
 for (let i = 0; i < TOTAL; i++) {
@@ -44,15 +48,33 @@ for (let i = 0; i < TOTAL; i++) {
     pos, heading: Math.atan2(fwd.x, fwd.z),
     speed: 0,
     wpIndex: 0, lap: 1, armed: false,
+    hp: MAX_HP, down: 0,
     stun: 0, attackTimer: 0, runPhase: Math.random() * 6,
     finished: false, finishTime: 0,
   });
 }
 const player = racers[0];
 
+// ladicí přístup z konzole: window.__dino.racers[1].down = 3.5  apod.
+window.__dino = { racers, player };
+
 // HUD vazby na druh hráče
 document.querySelector('[data-species]').textContent = player.spec.name;
 document.querySelector('[data-attack]').textContent = 'útok: ' + player.spec.attack;
+
+// plovoucí health bar nad každým dinosaurem
+const barsLayer = document.getElementById('bars');
+for (const r of racers) {
+  const box = document.createElement('div');
+  box.className = 'hpbox' + (r.isPlayer ? ' me' : '');
+  const tag = document.createElement('div'); tag.className = 'hptag';
+  tag.textContent = r.spec.name + (r.isPlayer ? ' (ty)' : '');
+  const bar = document.createElement('div'); bar.className = 'hpbar';
+  const fill = document.createElement('div'); fill.className = 'hpfill';
+  bar.appendChild(fill); box.appendChild(tag); box.appendChild(bar);
+  barsLayer.appendChild(box);
+  r.ui = { box, tag, fill };
+}
 
 // ---------- vstup ----------
 const keys = {};
@@ -70,7 +92,7 @@ addEventListener('resize', () => {
 
 // ---------- útok ----------
 function triggerAttack(r) {
-  if (r.attackTimer > 0 || r.stun > 0) return;
+  if (r.attackTimer > 0 || r.stun > 0 || r.down > 0) return; // sražený neútočí
   r.attackTimer = 0.45; // délka animace útoku
   r.attackHitDone = false;
 }
@@ -78,16 +100,25 @@ function triggerAttack(r) {
 function resolveAttackHit(r) {
   const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
   for (const o of racers) {
-    if (o === r || o.stun > 0) continue;
+    if (o === r || o.down > 0) continue; // už ležícího nemlátíme
     const to = new THREE.Vector3().subVectors(o.pos, r.pos);
     const dist = to.length();
     if (dist > r.spec.reach) continue;
     to.normalize();
     const ang = Math.acos(THREE.MathUtils.clamp(fwd.dot(to), -1, 1));
     if (ang < r.spec.arc) {
-      o.stun = 1.4;                 // omráčení soupeře
-      o.speed *= 0.3;
+      o.hp -= HIT_DMG;
       popFx(o, r.spec.attack);      // komiksová bublina
+      if (o.hp <= 0) {              // moc zásahů → k zemi
+        o.hp = 0;
+        o.down = KO_TIME;
+        o.stun = 0;
+        o.speed *= 0.2;
+        popFx(o, 'K.O.');
+      } else {
+        o.stun = 0.9;              // krátké omráčení po zásahu
+        o.speed *= 0.5;
+      }
     }
   }
 }
@@ -132,7 +163,11 @@ function controlPlayer(r, dt) {
 }
 
 function integrate(r, dt) {
-  if (r.stun > 0) {
+  if (r.down > 0) {                // sražený k zemi: leží a nehýbe se
+    r.down -= dt;
+    r.speed *= 0.85;
+    if (r.down <= 0) { r.down = 0; r.hp = MAX_HP; } // zvedne se a doplní život
+  } else if (r.stun > 0) {
     r.stun -= dt;
     r.heading += dt * 6;           // omráčený dino se zatočí dokola
     r.speed *= 0.96;
@@ -207,8 +242,10 @@ function animateDino(r, dt) {
   // aplikace transformace na root
   d.root.position.set(r.pos.x, 0, r.pos.z);
   d.root.rotation.y = r.heading;
-  // omráčený dino se nakloní (komiksové "zatočí se mu hlava")
-  d.body.rotation.z = r.stun > 0 ? Math.sin(performance.now() * 0.02) * 0.3 : 0;
+  // sražený leží na boku; omráčený se kýve (komiksové "zatočí se mu hlava")
+  if (r.down > 0) d.body.rotation.z = 1.35;
+  else if (r.stun > 0) d.body.rotation.z = Math.sin(performance.now() * 0.02) * 0.3;
+  else d.body.rotation.z = 0;
 }
 
 // ---------- komiksová bublina (DOM overlay) ----------
@@ -255,6 +292,29 @@ function updateHUD() {
   }
 }
 
+// ---------- health bary (DOM nad hlavou) ----------
+const barPos = new THREE.Vector3();
+function updateBars() {
+  for (const r of racers) {
+    const ui = r.ui;
+    barPos.set(r.pos.x, 3.6, r.pos.z).project(camera);
+    if (barPos.z > 1) { ui.box.style.display = 'none'; continue; } // za kamerou
+    ui.box.style.display = 'block';
+    ui.box.style.left = (barPos.x * 0.5 + 0.5) * innerWidth + 'px';
+    ui.box.style.top = (-barPos.y * 0.5 + 0.5) * innerHeight + 'px';
+
+    const pct = Math.max(0, r.hp / MAX_HP);
+    ui.fill.style.width = (pct * 100) + '%';
+    ui.fill.style.background =
+      r.down > 0 ? '#6b7280' : pct > 0.5 ? '#56d364' : pct > 0.25 ? '#e3b341' : '#f85149';
+
+    const ko = r.down > 0;
+    ui.box.classList.toggle('ko', ko);
+    const nameLabel = r.spec.name + (r.isPlayer ? ' (ty)' : '');
+    ui.tag.textContent = ko ? `K.O. ${r.down.toFixed(1)}s` : nameLabel;
+  }
+}
+
 // ---------- smyčka ----------
 let last = performance.now();
 function loop(now) {
@@ -262,7 +322,8 @@ function loop(now) {
   last = now;
 
   for (const r of racers) {
-    if (r.finished) { r.speed *= 0.9; }
+    if (r.down > 0) { /* sražený – řídí jen integrate */ }
+    else if (r.finished) { r.speed *= 0.9; }
     else if (r.isPlayer) controlPlayer(r, dt);
     else steerAI(r, dt);
     integrate(r, dt);
@@ -271,6 +332,7 @@ function loop(now) {
   }
   updateCamera(dt);
   updateHUD();
+  updateBars();
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
