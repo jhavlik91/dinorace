@@ -30,28 +30,7 @@ export function buildWorld(scene) {
     fragmentShader: `varying vec3 vP; uniform vec3 top; uniform vec3 bottom;
       void main(){ float h=clamp(vP.y/400.0*0.5+0.5,0.0,1.0); gl_FragColor=vec4(mix(bottom,top,h),1.0);} `,
   });
-  const skyMesh = new THREE.Mesh(skyGeo, skyMat);
-  scene.add(skyMesh);
-
-  // --- reálné pozadí: skutečná 360° fotka reálné ulice jako prostředí scény ---
-  // (komiksoví dinosauři ve "stylizované realitě"). Zdroj: Poly Haven, licence CC0.
-  // Když se nenačte (offline), graciézně zůstane gradientová obloha výše.
-  const PANORAMA = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/urban_street_01.jpg';
-  const loader = new THREE.TextureLoader();
-  loader.setCrossOrigin('anonymous');
-  loader.load(
-    PANORAMA,
-    (tex) => {
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      scene.background = tex;
-      scene.environment = tex;
-      skyMesh.visible = false;          // schováme fallback gradient
-      scene.fog = null;                  // mlha by hádala s fotkou
-    },
-    undefined,
-    () => { console.warn('Panorama se nenačetlo, používám gradientovou oblohu.'); }
-  );
+  scene.add(new THREE.Mesh(skyGeo, skyMat));
 
   // --- tráva / zem ---
   const ground = new THREE.Mesh(
