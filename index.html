@@ -103,6 +103,33 @@
     .st span { width: 66px; flex: none; }
     .st i { flex: 1; height: 7px; background: #0e1226; border-radius: 4px; overflow: hidden; }
     .st b { display: block; height: 100%; background: #56d364; }
+    #modes { display: flex; gap: 10px; margin-bottom: 16px; }
+    #modes button {
+      font: inherit; font-weight: 800; color: #cdd6ff; cursor: pointer;
+      background: #141a32; border: 2px solid #2a335e; border-bottom-width: 4px;
+      border-radius: 10px; padding: 8px 16px;
+    }
+    #modes button.on { color: #0b1020; background: #ffe14d; border-color: #c9ad28; }
+    .card.disabled { opacity: .35; pointer-events: none; filter: grayscale(.6); }
+
+    /* split-screen: dělící čára + per-hráč HUD */
+    #divider {
+      position: fixed; top: 0; left: 50%; width: 3px; height: 100%;
+      background: #0b0f1e; transform: translateX(-50%); z-index: 25; display: none;
+    }
+    .pHud {
+      position: fixed; top: 14px; z-index: 20; width: 46%; pointer-events: none;
+      color: #fff; font-weight: 800; text-shadow: 2px 2px 0 #000;
+    }
+    .pHud.left { left: 14px; }
+    .pHud.right { left: 51%; }
+    .pHud .pname { font-size: 19px; }
+    .pHud .pinfo { font-size: 13px; opacity: .9; margin: 2px 0 6px; }
+    .pHud .pb { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 3px 0; max-width: 210px; }
+    .pHud .pb span { width: 44px; flex: none; }
+    .pHud .pb i { flex: 1; height: 8px; background: #1b1f2a; border: 2px solid #000; border-radius: 5px; overflow: hidden; }
+    .pHud .pb b { display: block; height: 100%; width: 100%; background: #56d364; transition: width .1s, background .2s; }
+    .pHud .pspeed { font-size: 22px; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -123,10 +150,17 @@
   <div id="bars"></div>
   <div id="banner"></div>
 
+  <!-- dělící čára pro split-screen -->
+  <div id="divider"></div>
+
   <!-- menu výběru dinosaura -->
   <div id="menu">
     <h1>🦖 DINORACE</h1>
-    <div class="sub">Vyber svého dinosaura</div>
+    <div id="modes">
+      <button data-mode="1" class="on">1 hráč</button>
+      <button data-mode="2">2 hráči (split-screen)</button>
+    </div>
+    <div class="sub" data-prompt>Vyber svého dinosaura</div>
     <div id="cards"></div>
   </div>
 

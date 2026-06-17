@@ -20,15 +20,18 @@ Pak otevři vypsanou adresu (např. `http://localhost:3000` / `:8000`).
 
 ## Ovládání
 
-| Klávesa | Akce |
-|---|---|
-| `W` / `↑` | plyn |
-| `S` / `↓` | brzda |
-| `A` `D` / `←` `→` | zatáčení |
-| **mezerník** | **ÚTOK** (kousnutí / dráp / ocas / roh dle druhu) |
-| `R` | restart |
+V menu zvol **1 hráč** nebo **2 hráči (split-screen)** a vyber dinosaura.
 
-Zasáhneš-li soupeře v dosahu a úhlu svého útoku, na chvíli ho **omráčíš** a roztočíš.
+| Akce | 1 hráč | Hráč 1 (split) | Hráč 2 (split) |
+|---|---|---|---|
+| plyn / brzda | `W`/`S` nebo `↑`/`↓` | `W` / `S` | `↑` / `↓` |
+| zatáčení | `A`/`D` nebo `←`/`→` | `A` / `D` | `←` / `→` |
+| **ÚTOK** | **mezerník** | **mezerník** | **Enter** |
+| restart | `R` | `R` | `R` |
+
+Zasáhneš-li soupeře v dosahu a úhlu svého útoku, ubereš mu **odolnost**; po nasbírání
+zásahů jde k zemi (**K.O.**). Drž se trati — mimo ni se jede pomaleji. Při ostré jízdě
+ubývá **výdrž**; po vyčerpání dino umdlí a zpomalí.
 
 ## Co v prototypu je
 

@@ -1,4 +1,4 @@
-// main.js — herní smyčka prototypu DinoRace
+// main.js — herní smyčka prototypu DinoRace (1 hráč i split-screen pro 2)
 import * as THREE from 'three';
 import { buildWorld } from './world.js';
 import { buildDino, SPECIES, SPECIES_KEYS } from './dino.js';
@@ -13,15 +13,24 @@ app.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xcdebff, 120, 340);
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 600);
+function makeCamera() { return new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 600); }
+const cams = [makeCamera(), makeCamera()]; // 2. se použije jen ve split-screenu
 
 const world = buildWorld(scene);
 const PATH = world.path;
 const N = PATH.length;
 const LAPS = 2;
 
-const KO_TIME = 3.5;                 // jak dlouho je sražený dino "dole" (s)
-const TOTAL = SPECIES_KEYS.length;   // 6 závodníků (jeden za každý druh)
+const KO_TIME = 3.5;
+const TOTAL = SPECIES_KEYS.length; // 6 závodníků (jeden za každý druh)
+
+// vstupní schémata
+const SCHEME_WASD = { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], attack: 'Space' };
+const SCHEME_ARROWS = { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], attack: 'Enter' };
+const SCHEME_BOTH = {
+  up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
+  left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], attack: 'Space',
+};
 
 // ---------- závodníci (staví se rovnou — slouží i jako pozadí menu) ----------
 const start = PATH[0], next = PATH[1];
@@ -33,7 +42,6 @@ for (let i = 0; i < TOTAL; i++) {
   const dino = buildDino(speciesKey);
   scene.add(dino.root);
 
-  // startovní rošt 2 sloupce × 3 řady za startovní čárou
   const col = i % 2, row = (i / 2) | 0;
   const pos = new THREE.Vector3().copy(start)
     .addScaledVector(side0, (col - 0.5) * 4.5)
@@ -41,7 +49,7 @@ for (let i = 0; i < TOTAL; i++) {
 
   racers.push({
     dino, speciesKey, spec: dino.spec,
-    isPlayer: false,
+    isPlayer: false, scheme: null, hud: null,
     pos, heading: Math.atan2(fwd0.x, fwd0.z),
     speed: 0, wpIndex: 0, lap: 1, armed: false,
     hp: dino.spec.hp, down: 0,
@@ -50,12 +58,12 @@ for (let i = 0; i < TOTAL; i++) {
     finished: false, finishTime: 0, offTrack: false,
   });
 }
-let player = null;     // nastaví se výběrem v menu
+let players = [];      // 1 nebo 2 hráči
 let started = false;
-// ladicí přístup z konzole: window.__dino.racers[0].down = 3.5  apod.
-window.__dino = { racers, get player() { return player; } };
+let viewports = [];    // [{cam, x, y, w, h}] pro projekci a render
+window.__dino = { racers, get players() { return players; } };
 
-// plovoucí health bar nad každým dinosaurem (skryté do startu závodu)
+// plovoucí health bary (jen v režimu 1 hráč)
 const barsLayer = document.getElementById('bars');
 for (const r of racers) {
   const box = document.createElement('div'); box.className = 'hpbox';
@@ -68,7 +76,7 @@ for (const r of racers) {
 }
 barsLayer.style.display = 'none';
 
-// ---------- menu výběru ----------
+// ---------- menu ----------
 const STAT_DEFS = [
   ['Rychlost', 'topSpeed'], ['Zrychlení', 'accel'], ['Zatáčení', 'turn'],
   ['Odolnost', 'hp'], ['Výdrž', 'stamina'], ['Útok', 'dmg'],
@@ -78,11 +86,14 @@ for (const [, k] of STAT_DEFS) {
   const vals = SPECIES_KEYS.map(s => SPECIES[s][k]);
   ranges[k] = [Math.min(...vals), Math.max(...vals)];
 }
-function statPct(k, v) {
-  const [lo, hi] = ranges[k];
-  return 0.15 + 0.85 * ((v - lo) / (hi - lo || 1)); // i nejslabší stat má kousek
-}
+const statPct = (k, v) => { const [lo, hi] = ranges[k]; return 0.15 + 0.85 * ((v - lo) / (hi - lo || 1)); };
+
+let menuMode = 1;     // 1 nebo 2 hráči
+let picks = [];       // vybrané druhy
+const promptEl = document.querySelector('[data-prompt]');
 const cardsEl = document.getElementById('cards');
+const cardByKey = {};
+
 for (const key of SPECIES_KEYS) {
   const s = SPECIES[key];
   const card = document.createElement('button');
@@ -95,39 +106,109 @@ for (const key of SPECIES_KEYS) {
   card.innerHTML =
     `<div class="chead"><span class="dot" style="background:${sw}"></span>${s.name}</div>` +
     `<div class="catk">⚔ ${s.attack}</div><div>${stats}</div>`;
-  card.addEventListener('click', () => selectDino(key));
+  card.addEventListener('click', () => pickDino(key));
   cardsEl.appendChild(card);
+  cardByKey[key] = card;
 }
 
-function selectDino(key) {
-  player = racers.find(r => r.speciesKey === key);
-  player.isPlayer = true;
-  document.querySelector('[data-species]').textContent = player.spec.name;
-  document.querySelector('[data-attack]').textContent = 'útok: ' + player.spec.attack;
-  player.ui.box.classList.add('me');
-  player.ui.tag.textContent = player.spec.name + ' (ty)';
+for (const btn of document.querySelectorAll('#modes button')) {
+  btn.addEventListener('click', () => {
+    menuMode = +btn.dataset.mode;
+    for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b === btn);
+    picks = [];
+    for (const k in cardByKey) cardByKey[k].classList.remove('disabled');
+    promptEl.textContent = menuMode === 1 ? 'Vyber svého dinosaura' : 'Hráč 1 ①: vyber svého dinosaura';
+  });
+}
+
+function pickDino(key) {
+  if (picks.includes(key)) return;
+  picks.push(key);
+  cardByKey[key].classList.add('disabled');
+  if (picks.length < menuMode) {
+    promptEl.textContent = 'Hráč 2 ②: vyber svého dinosaura';
+    return;
+  }
+  startRace(picks);
+}
+
+function startRace(pickKeys) {
+  const schemes = menuMode === 1 ? [SCHEME_BOTH] : [SCHEME_WASD, SCHEME_ARROWS];
+  players = pickKeys.map((key, i) => {
+    const r = racers.find(x => x.speciesKey === key);
+    r.isPlayer = true;
+    r.scheme = schemes[i];
+    return r;
+  });
+
+  if (players.length === 1) {
+    viewports = [{ cam: cams[0], x: 0, y: 0, w: 1, h: 1 }];
+    document.querySelector('[data-species]').textContent = players[0].spec.name;
+    document.querySelector('[data-attack]').textContent = 'útok: ' + players[0].spec.attack;
+    players[0].ui.box.classList.add('me');
+    players[0].ui.tag.textContent = players[0].spec.name + ' (ty)';
+    barsLayer.style.display = '';
+  } else {
+    viewports = [
+      { cam: cams[0], x: 0, y: 0, w: 0.5, h: 1 },
+      { cam: cams[1], x: 0.5, y: 0, w: 0.5, h: 1 },
+    ];
+    document.getElementById('divider').style.display = 'block';
+    document.getElementById('topleft').style.display = 'none';
+    document.getElementById('topright').style.display = 'none';
+    document.getElementById('speedo').style.display = 'none';
+    buildPanel(players[0], 'left', '①');
+    buildPanel(players[1], 'right', '②');
+  }
+
+  setAspects();
   document.getElementById('menu').style.display = 'none';
-  barsLayer.style.display = '';
   started = true;
+}
+
+// per-hráč HUD pro split-screen
+function buildPanel(p, side, badge) {
+  const el = document.createElement('div');
+  el.className = 'pHud ' + side;
+  el.innerHTML =
+    `<div class="pname">${badge} ${p.spec.name}</div>` +
+    `<div class="pinfo"></div>` +
+    `<div class="pb"><span>HP</span><i><b class="hpb"></b></i></div>` +
+    `<div class="pb"><span>Výdrž</span><i><b class="stb"></b></i></div>` +
+    `<div class="pspeed"><b>0</b> <small>km/h</small></div>`;
+  document.body.appendChild(el);
+  p.hud = {
+    info: el.querySelector('.pinfo'),
+    hp: el.querySelector('.hpb'),
+    st: el.querySelector('.stb'),
+    speed: el.querySelector('.pspeed b'),
+  };
+}
+
+function setAspects() {
+  const aspect = (players.length === 2 ? innerWidth / 2 : innerWidth) / innerHeight;
+  for (const c of cams) { c.aspect = aspect; c.updateProjectionMatrix(); }
 }
 
 // ---------- vstup ----------
 const keys = {};
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (e.code === 'Space') { e.preventDefault(); if (started && player) triggerAttack(player); }
+  if (started) for (const p of players) {
+    if (e.code === p.scheme.attack) { e.preventDefault(); triggerAttack(p); }
+  }
   if (e.code === 'KeyR') location.reload();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  if (started) setAspects();
+  else { cams[0].aspect = innerWidth / innerHeight; cams[0].updateProjectionMatrix(); }
 });
 
 // ---------- útok ----------
 function triggerAttack(r) {
-  if (r.attackTimer > 0 || r.stun > 0 || r.down > 0) return; // sražený neútočí
+  if (r.attackTimer > 0 || r.stun > 0 || r.down > 0) return;
   r.attackTimer = 0.45;
   r.attackHitDone = false;
 }
@@ -142,14 +223,10 @@ function resolveAttackHit(r) {
     to.normalize();
     const ang = Math.acos(THREE.MathUtils.clamp(fwd.dot(to), -1, 1));
     if (ang < r.spec.arc) {
-      o.hp -= r.spec.dmg;            // síla útoku dle druhu
-      popFx(o, r.spec.attack);
-      if (o.hp <= 0) {              // moc zásahů → k zemi
-        o.hp = 0; o.down = KO_TIME; o.stun = 0; o.speed *= 0.2;
-        popFx(o, 'K.O.');
-      } else {
-        o.stun = 0.9; o.speed *= 0.5;
-      }
+      o.hp -= r.spec.dmg;
+      popFx(o);
+      if (o.hp <= 0) { o.hp = 0; o.down = KO_TIME; o.stun = 0; o.speed *= 0.2; popFx(o); }
+      else { o.stun = 0.9; o.speed *= 0.5; }
     }
   }
 }
@@ -182,23 +259,23 @@ function distToPath(x, z) {
 }
 
 function steerAI(r, dt) {
-  const look = (r.wpIndex + 3) % N;
-  const target = PATH[look];
+  const target = PATH[(r.wpIndex + 3) % N];
   const desired = Math.atan2(target.x - r.pos.x, target.z - r.pos.z);
   let diff = ((desired - r.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
   r.heading += THREE.MathUtils.clamp(diff, -1, 1) * r.spec.turn * dt;
-  const targetSpeed = r.spec.topSpeed * 0.82; // ať je hráč může dohnat
-  r.speed += (targetSpeed - r.speed) * 1.5 * dt;
+  r.speed += (r.spec.topSpeed * 0.82 - r.speed) * 1.5 * dt;
   if (Math.random() < 0.6 * dt) triggerAttack(r);
 }
 
+function down(list) { for (const k of list) if (keys[k]) return true; return false; }
 function controlPlayer(r, dt) {
-  const accel = (keys.KeyW || keys.ArrowUp) ? 1 : 0;
-  const brake = (keys.KeyS || keys.ArrowDown) ? 1 : 0;
-  const turn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
+  const s = r.scheme;
+  const accel = down(s.up) ? 1 : 0;
+  const brake = down(s.down) ? 1 : 0;
+  const turn = (down(s.left) ? 1 : 0) - (down(s.right) ? 1 : 0);
   r.speed += accel * r.spec.accel * dt;
   r.speed -= brake * 30 * dt;
-  const grip = THREE.MathUtils.clamp(r.speed / 8, 0, 1); // zatáčení až za jízdy
+  const grip = THREE.MathUtils.clamp(r.speed / 8, 0, 1);
   r.heading += turn * r.spec.turn * dt * grip;
 }
 
@@ -206,7 +283,7 @@ function integrate(r, dt) {
   if (r.down > 0) {
     r.down -= dt;
     r.speed *= 0.85;
-    if (r.down <= 0) { r.down = 0; r.hp = r.spec.hp; } // zvedne se s plným zdravím
+    if (r.down <= 0) { r.down = 0; r.hp = r.spec.hp; }
   } else if (r.stun > 0) {
     r.stun -= dt;
     r.heading += dt * 6;
@@ -220,10 +297,9 @@ function integrate(r, dt) {
   const hard = r.speed > r.spec.topSpeed * 0.6;
   r.stamina = THREE.MathUtils.clamp(r.stamina + (hard ? -dt : dt * 0.6), 0, maxSt);
   if (r.stamina <= 0) r.tired = true;
-  else if (r.stamina > maxSt * 0.3) r.tired = false; // zotaví se až po doplnění ~30 %
+  else if (r.stamina > maxSt * 0.3) r.tired = false;
   if (r.tired) r.speed = Math.min(r.speed, r.spec.topSpeed * 0.6);
 
-  // mimo trať = pomalejší
   r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
   if (r.offTrack) {
     r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5);
@@ -233,14 +309,11 @@ function integrate(r, dt) {
   const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
   r.pos.addScaledVector(fwd, r.speed * dt);
 
-  // odstrkávání závodníků od sebe
   for (const o of racers) {
     if (o === r) continue;
     const d = tmp.copy(r.pos).sub(o.pos); d.y = 0;
     const dist = d.length();
-    if (dist > 0.001 && dist < 2.6) {
-      r.pos.addScaledVector(d.normalize(), (2.6 - dist) * 0.5);
-    }
+    if (dist > 0.001 && dist < 2.6) r.pos.addScaledVector(d.normalize(), (2.6 - dist) * 0.5);
   }
 }
 
@@ -256,6 +329,10 @@ function updateProgress(r) {
   }
 }
 function progressScore(r) { return r.lap * N + r.wpIndex; }
+function placeOf(r) {
+  const sorted = [...racers].sort((a, b) => progressScore(b) - progressScore(a));
+  return sorted.indexOf(r) + 1;
+}
 
 // ---------- vizuální animace dina ----------
 function animateDino(r, dt) {
@@ -273,14 +350,9 @@ function animateDino(r, dt) {
     const p = 1 - r.attackTimer / 0.45;
     const swing = Math.sin(p * Math.PI);
     const which = r.spec.attackPart;
-    if (which === 'head') {
-      d.parts.neck.rotation.x = -swing * 0.6;
-      d.parts.jaw.rotation.x = swing * 0.6;
-    } else if (which === 'tail') {
-      d.parts.tail.rotation.y = swing * 1.6;
-    } else if (which === 'arm') {
-      d.parts.arm.rotation.x = -swing * 1.4;
-    }
+    if (which === 'head') { d.parts.neck.rotation.x = -swing * 0.6; d.parts.jaw.rotation.x = swing * 0.6; }
+    else if (which === 'tail') { d.parts.tail.rotation.y = swing * 1.6; }
+    else if (which === 'arm') { d.parts.arm.rotation.x = -swing * 1.4; }
     if (!r.attackHitDone && p > 0.5) { r.attackHitDone = true; resolveAttackHit(r); }
   } else {
     d.parts.jaw.rotation.x = 0;
@@ -294,37 +366,40 @@ function animateDino(r, dt) {
   else d.body.rotation.z = 0;
 }
 
-// ---------- komiksová bublina ----------
+// ---------- komiksová bublina (do každého viewportu, kde je vidět) ----------
 const fxLayer = document.getElementById('fx');
 const POW = ['BAM!', 'POW!', 'CHŇAP!', 'PRÁSK!', 'AU!'];
+const fxV = new THREE.Vector3();
 function popFx(r) {
-  const v = r.pos.clone().setY(2.5).project(camera);
-  if (v.z > 1) return;
-  const el = document.createElement('div');
-  el.className = 'pow';
-  el.textContent = POW[(Math.random() * POW.length) | 0];
-  el.style.left = (v.x * 0.5 + 0.5) * innerWidth + 'px';
-  el.style.top = (-v.y * 0.5 + 0.5) * innerHeight + 'px';
-  el.style.setProperty('--r', (Math.random() * 30 - 15) + 'deg');
-  fxLayer.appendChild(el);
-  setTimeout(() => el.remove(), 520);
+  const word = POW[(Math.random() * POW.length) | 0];
+  for (const vp of viewports) {
+    fxV.set(r.pos.x, 2.5, r.pos.z).project(vp.cam);
+    if (fxV.z > 1 || fxV.x < -1 || fxV.x > 1 || fxV.y < -1 || fxV.y > 1) continue;
+    const el = document.createElement('div');
+    el.className = 'pow';
+    el.textContent = word;
+    el.style.left = (vp.x + (fxV.x * 0.5 + 0.5) * vp.w) * innerWidth + 'px';
+    el.style.top = (vp.y + (-fxV.y * 0.5 + 0.5) * vp.h) * innerHeight + 'px';
+    el.style.setProperty('--r', (Math.random() * 30 - 15) + 'deg');
+    fxLayer.appendChild(el);
+    setTimeout(() => el.remove(), 520);
+  }
 }
 
 // ---------- kamera ----------
-function updateCamera(dt) {
-  const fwd = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading));
-  const want = new THREE.Vector3().copy(player.pos)
+function updateCamera(cam, p, dt) {
+  const fwd = new THREE.Vector3(Math.sin(p.heading), 0, Math.cos(p.heading));
+  const want = new THREE.Vector3().copy(p.pos)
     .addScaledVector(fwd, -11).add(new THREE.Vector3(0, 7, 0));
-  camera.position.lerp(want, Math.min(1, dt * 4));
-  camera.lookAt(player.pos.x, 2, player.pos.z);
+  cam.position.lerp(want, Math.min(1, dt * 4));
+  cam.lookAt(p.pos.x, 2, p.pos.z);
 }
 
-// kamera v menu: pomalý oblet startovního roštu
 const lineupCenter = new THREE.Vector3().copy(start).addScaledVector(fwd0, -9);
 function menuCamera(now) {
   const a = now * 0.00025;
-  camera.position.set(lineupCenter.x + Math.cos(a) * 20, 10, lineupCenter.z + Math.sin(a) * 20);
-  camera.lookAt(lineupCenter.x, 3, lineupCenter.z);
+  cams[0].position.set(lineupCenter.x + Math.cos(a) * 20, 10, lineupCenter.z + Math.sin(a) * 20);
+  cams[0].lookAt(lineupCenter.x, 3, lineupCenter.z);
 }
 
 // ---------- HUD ----------
@@ -333,28 +408,44 @@ const elPos = document.querySelector('[data-pos]');
 const elSpeed = document.querySelector('[data-speed]');
 const elStamina = document.querySelector('[data-stamina]');
 const banner = document.getElementById('banner');
-function updateHUD() {
-  const sorted = [...racers].sort((a, b) => progressScore(b) - progressScore(a));
-  const place = sorted.indexOf(player) + 1;
-  elLap.textContent = `Kolo ${Math.min(player.lap, LAPS)}/${LAPS}`;
+
+function updateHUD1() { // režim 1 hráč
+  const p = players[0];
+  const place = placeOf(p);
+  elLap.textContent = `Kolo ${Math.min(p.lap, LAPS)}/${LAPS}`;
   elPos.textContent = `Pozice ${place}/${TOTAL}`;
-  elSpeed.textContent = Math.round(player.speed * 3.6 * 1.6);
-  elSpeed.parentElement.style.color = player.offTrack ? '#e3b341' : '#fff';
-  // výdrž: zelená → při umdlení červená
-  elStamina.style.width = Math.max(0, player.stamina / player.spec.stamina) * 100 + '%';
-  elStamina.style.background = player.tired ? '#f85149' : '#56d364';
-  if (player.finished) {
-    banner.textContent = place === 1 ? '🏆 VÍTĚZSTVÍ!' : 'CÍL!';
+  elSpeed.textContent = Math.round(p.speed * 3.6 * 1.6);
+  elSpeed.parentElement.style.color = p.offTrack ? '#e3b341' : '#fff';
+  elStamina.style.width = Math.max(0, p.stamina / p.spec.stamina) * 100 + '%';
+  elStamina.style.background = p.tired ? '#f85149' : '#56d364';
+  if (p.finished) { banner.textContent = place === 1 ? '🏆 VÍTĚZSTVÍ!' : 'CÍL!'; banner.style.opacity = 1; }
+}
+
+function updatePanels() { // režim split-screen
+  for (const p of players) {
+    const h = p.hud;
+    h.info.textContent = `Kolo ${Math.min(p.lap, LAPS)}/${LAPS} · Pozice ${placeOf(p)}/${TOTAL}`;
+    const hpPct = Math.max(0, p.hp / p.spec.hp);
+    h.hp.style.width = hpPct * 100 + '%';
+    h.hp.style.background = p.down > 0 ? '#6b7280' : hpPct > 0.5 ? '#56d364' : hpPct > 0.25 ? '#e3b341' : '#f85149';
+    h.st.style.width = Math.max(0, p.stamina / p.spec.stamina) * 100 + '%';
+    h.st.style.background = p.tired ? '#f85149' : '#56d364';
+    h.speed.textContent = Math.round(p.speed * 3.6 * 1.6);
+    h.speed.parentElement.style.color = p.offTrack ? '#e3b341' : '#fff';
+  }
+  if (players.some(p => p.finished) && !banner.style.opacity) {
+    const w = players.find(p => p.finished);
+    banner.textContent = placeOf(w) === 1 ? '🏆 VÍTĚZSTVÍ!' : 'CÍL!';
     banner.style.opacity = 1;
   }
 }
 
-// ---------- health bary ----------
+// ---------- health bary (jen 1 hráč) ----------
 const barPos = new THREE.Vector3();
 function updateBars() {
   for (const r of racers) {
     const ui = r.ui;
-    barPos.set(r.pos.x, 3.6, r.pos.z).project(camera);
+    barPos.set(r.pos.x, 3.6, r.pos.z).project(cams[0]);
     if (barPos.z > 1) { ui.box.style.display = 'none'; continue; }
     ui.box.style.display = 'block';
     ui.box.style.left = (barPos.x * 0.5 + 0.5) * innerWidth + 'px';
@@ -365,8 +456,25 @@ function updateBars() {
       r.down > 0 ? '#6b7280' : pct > 0.5 ? '#56d364' : pct > 0.25 ? '#e3b341' : '#f85149';
     const ko = r.down > 0;
     ui.box.classList.toggle('ko', ko);
-    ui.tag.textContent = ko ? `K.O. ${r.down.toFixed(1)}s`
-      : r.spec.name + (r.isPlayer ? ' (ty)' : '');
+    ui.tag.textContent = ko ? `K.O. ${r.down.toFixed(1)}s` : r.spec.name + (r.isPlayer ? ' (ty)' : '');
+  }
+}
+
+// ---------- render split-screenu / celé obrazovky ----------
+function renderViews() {
+  if (viewports.length === 1) {
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, innerWidth, innerHeight);
+    renderer.render(scene, cams[0]);
+  } else {
+    renderer.setScissorTest(true);
+    for (const vp of viewports) {
+      const x = vp.x * innerWidth, w = vp.w * innerWidth;
+      renderer.setViewport(x, 0, w, innerHeight);
+      renderer.setScissor(x, 0, w, innerHeight);
+      renderer.render(scene, vp.cam);
+    }
+    renderer.setScissorTest(false);
   }
 }
 
@@ -386,15 +494,18 @@ function loop(now) {
       updateProgress(r);
       animateDino(r, dt);
     }
-    updateCamera(dt);
-    updateHUD();
-    updateBars();
+    for (const vp of viewports) updateCamera(vp.cam, vp.cam === cams[0] ? players[0] : players[1], dt);
+    if (players.length === 1) { updateHUD1(); updateBars(); }
+    else updatePanels();
+    renderViews();
   } else {
     menuCamera(now);
-    for (const r of racers) animateDino(r, dt); // jemné "dýchání" v lineupu
+    for (const r of racers) animateDino(r, dt);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, innerWidth, innerHeight);
+    renderer.render(scene, cams[0]);
   }
 
-  renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
