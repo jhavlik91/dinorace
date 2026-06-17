@@ -23,7 +23,7 @@ const LAPS = 2;
 const OBST = world.obstacles;
 const DINO_R = 1.2;
 const KO_TIME = 3.5;
-const AGGRO_CAP = 86;   // ~500 km/h: agresoři se řítí na vedoucího hráče
+const AGGRO_CAP = 100;  // hyper boost agresorů (~580 km/h) na vedoucího hráče
 
 const P1_COLOR = '#3b82f6', P2_COLOR = '#ef4444'; // modrá / červená
 
@@ -72,7 +72,7 @@ for (let i = 0; i < TOTAL; i++) {
 let players = [];
 let started = false, racing = false, countdown = 3.0;
 let viewports = [];
-window.__dino = { racers, get players() { return players; } };
+window.__dino = { racers, path: PATH, get players() { return players; } };
 
 // plovoucí health bary (jen 1 hráč)
 const barsLayer = document.getElementById('bars');
@@ -308,12 +308,13 @@ function steerAggressive(r, dt) {
   const t = aggroTarget();
   // útočí JEN dokud je hráč první; jinak (AI v čele) prostě závodí
   if (!t || t === r) { steerAI(r, dt); return; }
-  r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.5 * dt;
+  r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.8 * dt;
   const d = Math.hypot(t.pos.x - r.pos.x, t.pos.z - r.pos.z);
-  // daleko = obří turbo (řítí se na hráče), blízko = přibrzdí a otravuje
-  const desired = d > 9 ? AGGRO_CAP : r.spec.topSpeed * 0.75;
-  r.speed += (desired - r.speed) * 2.0 * dt;
-  r.megaBoost = d > 9;
+  // HYPER BOOST: daleko se řítí na hráče maximem (dožene téměř ihned), do ~14 j. prudce
+  // zpomalí na ovladatelnou rychlost, aby se stočil dovnitř a netrefil jen oblouk kolem.
+  const desired = d > 14 ? AGGRO_CAP : r.spec.topSpeed * 0.7;
+  r.speed += (desired - r.speed) * 8 * dt;
+  r.megaBoost = d > 14;
   r.boosting = false;
   if (d < r.spec.reach + 0.9) triggerAttack(r);
 }
