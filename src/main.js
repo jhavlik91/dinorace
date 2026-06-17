@@ -294,16 +294,16 @@ function steerAI(r, dt) {
   const target = PATH[(r.wpIndex + 3) % N];
   r.heading += THREE.MathUtils.clamp(angTowards(r, target.x, target.z), -1, 1) * r.spec.turn * dt;
   r.speed += (r.spec.topSpeed * 0.86 - r.speed) * 1.5 * dt;
-  r.boosting = r.stamina > 0;
+  r.boosting = r.stamina > r.spec.stamina * 0.55; // boost jen občas, ne pořád
   maybeAttack(r);
 }
 
 function steerAggressive(r, dt) {
   const t = aggroTarget();
   if (!t || t === r) { steerAI(r, dt); return; }
-  r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.2 * dt;
-  r.speed += (r.spec.topSpeed - r.speed) * 1.8 * dt; // řítí se naplno
-  r.boosting = r.stamina > 0;
+  r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.1 * dt;
+  r.speed += (r.spec.topSpeed * 0.82 - r.speed) * 1.5 * dt; // pronásleduje, ale ne nesmyslně rychle
+  r.boosting = false;                                        // žádný turbo navíc
   const d = Math.hypot(t.pos.x - r.pos.x, t.pos.z - r.pos.z);
   if (d < r.spec.reach + 0.8) triggerAttack(r);
 }
@@ -335,9 +335,10 @@ function integrate(r, dt) {
   }
   r.speed *= (1 - 0.6 * dt);
 
-  // turbo: krátkodobé zrychlení nad maximum, ujídá výdrž
+  // turbo: krátkodobé zrychlení nad maximum, ujídá výdrž; jinak se pomalu doplňuje
   const boosting = r.boosting && r.stamina > 0 && r.down <= 0;
   if (boosting) { r.speed += r.spec.accel * 0.8 * dt; r.stamina = Math.max(0, r.stamina - 3 * dt); }
+  else if (r.down <= 0) r.stamina = Math.min(r.spec.stamina, r.stamina + 0.6 * dt); // pasivní doplnění
   const cap = boosting ? r.spec.topSpeed * 1.45 : r.spec.topSpeed;
   r.speed = THREE.MathUtils.clamp(r.speed, 0, cap);
 
