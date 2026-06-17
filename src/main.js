@@ -24,6 +24,7 @@ const OBST = world.obstacles;
 const DINO_R = 1.2;
 const KO_TIME = 3.5;
 const AGGRO_CAP = 135;  // hyper boost agresorů (~780 km/h) na vedoucího hráče
+const RAPTOR_DELAY = 5; // úvodní spánek raptorů – po startu pár vteřin nečíhají
 
 const P1_COLOR = '#3b82f6', P2_COLOR = '#ef4444'; // modrá / červená
 
@@ -48,19 +49,31 @@ const start = PATH[0], next = PATH[1];
 const fwd0 = new THREE.Vector3().subVectors(next, start).normalize();
 const side0 = new THREE.Vector3(-fwd0.z, 0, fwd0.x);
 const racers = [];
+let gridN = 0, aggN = 0;
 for (let i = 0; i < TOTAL; i++) {
   const speciesKey = ROSTER[i].species;
+  const aggressive = !!ROSTER[i].aggressive;
   const dino = buildDino(speciesKey);
   scene.add(dino.root);
 
-  const col = i % 2, row = (i / 2) | 0;       // 2 sloupce × 5 řad
-  const pos = new THREE.Vector3().copy(start)
-    .addScaledVector(side0, (col - 0.5) * 4.5)
-    .addScaledVector(fwd0, -5 - row * 4.5);
+  let pos;
+  if (aggressive) {
+    // raptoři číhají daleko za startem (mimo view), přiběhnou až po pár vteřinách
+    pos = new THREE.Vector3().copy(start)
+      .addScaledVector(fwd0, -170 - aggN * 8)
+      .addScaledVector(side0, (aggN - 1) * 10);
+    aggN++;
+  } else {
+    const col = gridN % 2, row = (gridN / 2) | 0; // 2 sloupce × řady
+    pos = new THREE.Vector3().copy(start)
+      .addScaledVector(side0, (col - 0.5) * 4.5)
+      .addScaledVector(fwd0, -5 - row * 4.5);
+    gridN++;
+  }
 
   racers.push({
     dino, speciesKey, spec: dino.spec,
-    isPlayer: false, aggressive: !!ROSTER[i].aggressive, megaBoost: false, rankBonus: 0, scheme: null, hud: null,
+    isPlayer: false, aggressive, megaBoost: false, rankBonus: 0, scheme: null, hud: null,
     pos, heading: Math.atan2(fwd0.x, fwd0.z),
     speed: 0, wpIndex: 0, lap: 1, armed: false,
     hp: dino.spec.hp, down: 0,
@@ -69,8 +82,11 @@ for (let i = 0; i < TOTAL; i++) {
     finished: false, finishTime: 0, offTrack: false,
   });
 }
+// agresivní raptoři NEJSOU závodníci – do pořadí se počítají jen ostatní
+const RACER_COUNT = racers.filter(r => !r.aggressive).length;
+
 let players = [];
-let started = false, racing = false, countdown = 3.0;
+let started = false, racing = false, countdown = 3.0, raceTime = 0;
 let viewports = [];
 window.__dino = { racers, path: PATH, get players() { return players; } };
 
@@ -184,7 +200,7 @@ function startRace(pickKeys) {
   setAspects();
   document.getElementById('menu').style.display = 'none';
   started = true;
-  racing = false; countdown = 3.0;  // 3-2-1 start
+  racing = false; countdown = 3.0; raceTime = 0;  // 3-2-1 start
 }
 
 function buildPanel(p, side, badge, color) {
@@ -312,8 +328,8 @@ function steerAI(r, dt) {
 
 function steerAggressive(r, dt) {
   const t = aggroTarget();
-  // útočí JEN dokud je hráč první; na 2. místě (i níž) přestanou a jen závodí
-  if (!t || t === r) { followTrack(r, dt); return; }
+  // útočí JEN dokud je první hráč; jinak (i během úvodního spánku) zmizí mimo view a čeká
+  if (!t || t === r) { fleeAway(r, dt); return; }
   r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.8 * dt;
   r.boosting = false;
   const d = Math.hypot(t.pos.x - r.pos.x, t.pos.z - r.pos.z);
@@ -330,9 +346,27 @@ function steerAggressive(r, dt) {
   if (d < r.spec.reach + 0.9) triggerAttack(r);
 }
 
-function aggroTarget() { // jen když je první v závodě hráč – pak ho honí
-  const leader = [...racers].sort((a, b) => progressScore(b) - progressScore(a))[0];
-  return leader && leader.isPlayer ? leader : null;
+// raptor mimo akci: uteče daleko od dění a čeká, dokud hráč nebude zase první
+function fleeAway(r, dt) {
+  r.boosting = false;
+  const ref = leadRacer() || r;
+  const dx = r.pos.x - ref.pos.x, dz = r.pos.z - ref.pos.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist > 160) { r.megaBoost = false; r.speed *= (1 - 2 * dt); return; } // dost daleko – čeká
+  const away = Math.atan2(dx, dz);
+  let diff = ((away - r.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  r.heading += THREE.MathUtils.clamp(diff, -1, 1) * r.spec.turn * 1.5 * dt;
+  r.speed += (AGGRO_CAP - r.speed) * 6 * dt;
+  r.megaBoost = true; // zmizí z view rychle
+}
+
+// pole skutečných závodníků (raptoři se nepočítají)
+function raceField() { return racers.filter(x => !x.aggressive); }
+function leadRacer() { return raceField().sort((a, b) => progressScore(b) - progressScore(a))[0]; }
+function aggroTarget() { // jen dokud je první hráč a po úvodním spánku
+  if (raceTime < RAPTOR_DELAY) return null;
+  const l = leadRacer();
+  return l && l.isPlayer ? l : null;
 }
 
 function down(list) { for (const k of list) if (keys[k]) return true; return false; }
@@ -401,8 +435,8 @@ function updateProgress(r) {
   }
 }
 function progressScore(r) { return r.lap * N + r.wpIndex + r.rankBonus; }
-function placeOf(r) {
-  return [...racers].sort((a, b) => progressScore(b) - progressScore(a)).indexOf(r) + 1;
+function placeOf(r) { // pořadí jen mezi skutečnými závodníky (bez raptorů)
+  return raceField().sort((a, b) => progressScore(b) - progressScore(a)).indexOf(r) + 1;
 }
 
 // ---------- animace ----------
@@ -482,7 +516,7 @@ function updateHUD1() {
   const p = players[0];
   const place = placeOf(p);
   elLap.textContent = `Kolo ${Math.min(p.lap, LAPS)}/${LAPS}`;
-  elPos.textContent = `Pozice ${place}/${TOTAL}`;
+  elPos.textContent = `Pozice ${place}/${RACER_COUNT}`;
   elSpeed.textContent = Math.round(p.speed * 3.6 * 1.6);
   elSpeed.parentElement.style.color = p.offTrack ? '#e3b341' : '#fff';
   elStamina.style.width = Math.max(0, p.stamina / p.spec.stamina) * 100 + '%';
@@ -493,7 +527,7 @@ function updateHUD1() {
 function updatePanels() {
   for (const p of players) {
     const h = p.hud;
-    h.info.textContent = `Kolo ${Math.min(p.lap, LAPS)}/${LAPS} · Pozice ${placeOf(p)}/${TOTAL}`;
+    h.info.textContent = `Kolo ${Math.min(p.lap, LAPS)}/${LAPS} · Pozice ${placeOf(p)}/${RACER_COUNT}`;
     const hpPct = Math.max(0, p.hp / p.spec.hp);
     h.hp.style.width = hpPct * 100 + '%';
     h.hp.style.background = p.down > 0 ? '#6b7280' : hpPct > 0.5 ? '#56d364' : hpPct > 0.25 ? '#e3b341' : '#f85149';
@@ -570,6 +604,7 @@ function loop(now) {
 
   if (started) {
     if (!racing) updateCountdown(dt);
+    else raceTime += dt;
     for (const r of racers) {
       if (racing) {
         if (r.down > 0) { /* sražený */ }
@@ -578,7 +613,7 @@ function loop(now) {
         else if (r.aggressive) steerAggressive(r, dt);
         else steerAI(r, dt);
         integrate(r, dt);
-        updateProgress(r);
+        if (!r.aggressive) updateProgress(r); // raptoři nezávodí, kola se nepočítají
       }
       animateDino(r, dt);
     }
