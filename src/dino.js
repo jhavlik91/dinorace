@@ -44,39 +44,41 @@ function part(geometry, mat, thickness = OUTLINE) {
 }
 
 // Definice druhů: barva + typ útoku + dosah/úhel + vzor kůže.
-// Staty: topSpeed, accel (zrychlení), turn (zatáčení), hp (odolnost do K.O.),
-// stamina (výdrž – po vyčerpání dino umdlí a zpomalí), dmg (síla útoku),
-// reach/arc (dosah a úhel zásahu). Každý druh hraje trochu jinak.
+// Hlavní rozdíly mezi druhy: výdrž (stamina = turbo), síla útoku (dmg) a
+// rozsah/směr útoku (dirs: 0 = před sebe, PI = za sebe, ±PI/2 = vedle).
+// Útok hlavou míří před sebe, ocasem vedle a za sebe; Triceratops obojí (před i za).
+// attackPart řídí jen animaci: 'head' | 'tail' | 'arm' | 'both'.
+const FRONT = [0], REAR = [Math.PI], FRONT_REAR = [0, Math.PI];
 export const SPECIES = {
   trex: {
-    name: 'T-Rex',        color: 0x6fae5a, attack: 'Kousnutí',  skin: 'stripes',
-    attackPart: 'head',   reach: 4.2, arc: 0.5,
-    topSpeed: 33, accel: 22, turn: 2.2, hp: 120, stamina: 6, dmg: 26,
+    name: 'T-Rex',        color: 0x6fae5a, attack: 'Kousnutí – před sebe', skin: 'stripes',
+    attackPart: 'head',   dirs: FRONT,      reach: 4.4, arc: 0.6,
+    topSpeed: 33, accel: 22, turn: 2.2, hp: 120, stamina: 5, dmg: 30,
   },
   raptor: {
-    name: 'Raptor',       color: 0xd9a441, attack: 'Sek drápem', skin: 'stripes',
-    attackPart: 'arm',    reach: 3.4, arc: 0.7,
-    topSpeed: 40, accel: 30, turn: 3.0, hp: 70,  stamina: 4, dmg: 16,
+    name: 'Raptor',       color: 0xd9a441, attack: 'Sek drápem – před sebe', skin: 'stripes',
+    attackPart: 'arm',    dirs: FRONT,      reach: 3.6, arc: 0.7,
+    topSpeed: 38, accel: 28, turn: 2.8, hp: 80,  stamina: 6, dmg: 14,
   },
   ankylo: {
-    name: 'Ankylosaurus', color: 0x5a83ae, attack: 'Úder ocasem', skin: 'spots',
-    attackPart: 'tail',   reach: 4.6, arc: 0.9,
-    topSpeed: 27, accel: 17, turn: 1.8, hp: 150, stamina: 9, dmg: 24,
+    name: 'Ankylosaurus', color: 0x5a83ae, attack: 'Ocas – vedle a za', skin: 'spots',
+    attackPart: 'tail',   dirs: REAR,       reach: 4.4, arc: 1.9,
+    topSpeed: 29, accel: 19, turn: 1.9, hp: 150, stamina: 4, dmg: 24,
   },
   trike: {
-    name: 'Triceratops',  color: 0xb56ab0, attack: 'Náraz rohem', skin: 'spots',
-    attackPart: 'head',   reach: 3.8, arc: 0.45,
-    topSpeed: 32, accel: 24, turn: 2.0, hp: 120, stamina: 6, dmg: 24,
+    name: 'Triceratops',  color: 0xb56ab0, attack: 'Roh a ocas – před i za', skin: 'spots',
+    attackPart: 'both',   dirs: FRONT_REAR, reach: 4.0, arc: 0.6,
+    topSpeed: 31, accel: 23, turn: 2.0, hp: 120, stamina: 5, dmg: 22,
   },
   stego: {
-    name: 'Stegosaurus',  color: 0x9c7b4a, attack: 'Ostny ocasu', skin: 'spots',
-    attackPart: 'tail',   reach: 5.0, arc: 1.0,
-    topSpeed: 28, accel: 18, turn: 1.9, hp: 135, stamina: 8, dmg: 22,
+    name: 'Stegosaurus',  color: 0x9c7b4a, attack: 'Ostny ocasu – vedle a za', skin: 'spots',
+    attackPart: 'tail',   dirs: REAR,       reach: 5.0, arc: 1.9,
+    topSpeed: 29, accel: 19, turn: 2.0, hp: 135, stamina: 4, dmg: 22,
   },
   pachy: {
-    name: 'Pachycefalosaurus', color: 0xc9925a, attack: 'Náraz hlavou', skin: 'stripes',
-    attackPart: 'head',   reach: 3.6, arc: 0.5,
-    topSpeed: 36, accel: 26, turn: 2.6, hp: 95,  stamina: 5, dmg: 20,
+    name: 'Pachycefalosaurus', color: 0xc9925a, attack: 'Náraz hlavou – před sebe', skin: 'stripes',
+    attackPart: 'head',   dirs: FRONT,      reach: 3.8, arc: 0.5,
+    topSpeed: 35, accel: 25, turn: 2.5, hp: 95,  stamina: 6, dmg: 20,
   },
 };
 

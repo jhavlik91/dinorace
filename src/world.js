@@ -150,6 +150,7 @@ export function buildWorld(scene) {
 
   // --- bloky budov ("dnešní svět") s fasádami a střechami ---
   const cityGroup = new THREE.Group();
+  const obstacles = []; // {x,z,r} – kruhové kolize, ať dino neprobíhá skrz
   const wallPal = [0xe7e2d8, 0xd9b08c, 0xcfd6dd, 0xe9c46a, 0xb6c2a8, 0xd98b7a, 0xa9b7c6];
   const winPal = [0x3a4a6a, 0x6fc2d6, 0xffd86b, 0x2b3550]; // sklo / rozsvícená okna
   const rng = mulberry32(1234);
@@ -191,8 +192,14 @@ export function buildWorld(scene) {
     b.add(base);
 
     cityGroup.add(b);
+
+    // kolize: kruh kolem budovy – přidáme jen pokud nezasahuje na silnici
+    const cr = Math.max(w, d) / 2 + 0.4;
+    if (distToTrack(x, z, path) - cr > trackWidth / 2 + 0.8) {
+      obstacles.push({ x, z, r: cr });
+    }
   }
-  addLandmarks(cityGroup); // parodické "kulisy" reálných staveb
+  addLandmarks(cityGroup, obstacles); // parodické "kulisy" reálných staveb
   scene.add(cityGroup);
 
   // --- světla ---
@@ -201,7 +208,7 @@ export function buildWorld(scene) {
   scene.add(sun);
   scene.add(new THREE.HemisphereLight(0xcdeBff, 0x6a8a5a, 1.1));
 
-  return { path, trackWidth };
+  return { path, trackWidth, obstacles };
 }
 
 // jeden díl landmarku = toon mesh + širší obrys
@@ -231,7 +238,14 @@ function clockTex() {
 }
 
 // parodické "kulisy" reálných staveb (komiksová verze slavných památek)
-function addLandmarks(group) {
+function addLandmarks(group, obstacles) {
+  // kruhové kolize pod landmarky (ať se skrz ně neproběhne)
+  obstacles.push(
+    { x: -96, z: 26, r: 3.5 },   // šikmá věž
+    { x: 99, z: -14, r: 7.5 },   // Eiffelka
+    { x: 8, z: -80, r: 5 },      // hodinová věž
+    { x: -34, z: 82, r: 5.5 },   // socha
+  );
   // 1) Šikmá věž (parodie Pisy)
   const pisa = new THREE.Group();
   for (let i = 0; i < 6; i++) {

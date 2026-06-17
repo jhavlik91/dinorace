@@ -27,11 +27,18 @@ V menu zvol **1 hráč** nebo **2 hráči (split-screen)** a vyber dinosaura.
 | plyn / brzda | `W`/`S` nebo `↑`/`↓` | `W` / `S` | `↑` / `↓` |
 | zatáčení | `A`/`D` nebo `←`/`→` | `A` / `D` | `←` / `→` |
 | **ÚTOK** | **mezerník** | **mezerník** | **Enter** |
+| **TURBO** | **Shift** | **levý Shift** | **pravý Shift** |
 | restart | `R` | `R` | `R` |
 
-Zasáhneš-li soupeře v dosahu a úhlu svého útoku, ubereš mu **odolnost**; po nasbírání
-zásahů jde k zemi (**K.O.**). Drž se trati — mimo ni se jede pomaleji. Při ostré jízdě
-ubývá **výdrž**; po vyčerpání dino umdlí a zpomalí.
+Závodí **10 dinosaurů**, mezi nimi **3 nesmyslně agresivní raptoři**, kteří jdou po
+vedoucím hráči. Po odpočtu **3-2-1 start**.
+
+- **Útok** ubírá soupeři **odolnost**; po nasbírání zásahů jde k zemi (**K.O.**).
+  Směr záleží na druhu: hlavou **před sebe**, ocasem **vedle a za**, Triceratops **před i za**.
+- **Turbo** (výdrž) startuje na nule, **získává se povedenými útoky** do soupeřů a slouží
+  jako krátké zrychlení nad maximum.
+- Mimo trať se jede pomaleji; budovami se **neprojede**.
+- Druhy se liší hlavně **výdrží (turbo), silou útoku a jeho rozsahem**.
 
 ## Co v prototypu je
 
