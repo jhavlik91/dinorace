@@ -32,18 +32,21 @@ Zasáhneš-li soupeře v dosahu a úhlu svého útoku, na chvíli ho **omráčí
 
 ## Co v prototypu je
 
+- ✅ **Menu výběru** — 6 hratelných druhů, každý s vlastními staty (rychlost, zrychlení, zatáčení, výdrž, útok)
 - ✅ Komiksová stylizace — cel-shading (toon) + černé inkoustové obrysy, komiksové „BAM!" bubliny
-- ✅ Stylizovaný svět — oválná trať, bloky budov, komiksová obloha
-- ✅ 4 druhy dinosaurů z primitiv, každý s vlastním útokem (`src/dino.js`)
-- ✅ Arkádové řízení + jednoduchá AI soupeřů sledujících trať
+- ✅ Stylizovaný svět — oválná trať, fasády budov s okny, parodické landmarky, komiksová obloha
+- ✅ **6 druhů dinosaurů** s texturou kůže a vlastním útokem (`src/dino.js`):
+  T-Rex, Raptor, Ankylosaurus, Triceratops, Stegosaurus, Pachycefalosaurus
+- ✅ Health bar + K.O. stav (po nasbírání zásahů jde dino k zemi)
+- ✅ Arkádové řízení + AI soupeřů, zpomalení mimo trať
 - ✅ Počítání kol, pořadí, „rychloměr"
 
 ## Co zatím chybí (další kroky)
 
 - Reálné podklady světa (Cesium 3D Tiles / OSM) místo placeholder budov
-- Pořádné 3D modely dinosaurů místo kostek
+- Pořádné 3D modely dinosaurů místo primitiv
 - Lepší fyzika jízdy, kolize, smyk
-- Zvuky, menu, výběr druhu, víc tratí
+- Multiplayer (lokální split-screen, nebo online), zvuky, víc tratí
 
 ## Struktura
 

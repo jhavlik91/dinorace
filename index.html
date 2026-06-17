@@ -67,6 +67,36 @@
     .hpbox.me .hptag { color: #ffe14d; font-size: 12px; }
     .hpbox.me .hpbar { width: 84px; height: 10px; box-shadow: 0 0 0 2px #ffe14d; }
     .hpbox.ko .hptag { color: #f85149; }
+
+    /* menu výběru dinosaura */
+    #menu {
+      position: fixed; inset: 0; z-index: 50; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      background: linear-gradient(180deg, rgba(8,12,28,.5), rgba(8,12,28,.8));
+    }
+    #menu h1 {
+      color: #fff; font-size: 44px; font-weight: 900; letter-spacing: 1px;
+      -webkit-text-stroke: 2px #000; text-stroke: 2px #000;
+    }
+    #menu .sub { color: #cdd6ff; font-weight: 700; margin: 4px 0 22px; }
+    #cards {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+      width: min(900px, 92vw);
+    }
+    .card {
+      text-align: left; cursor: pointer; font: inherit; color: #fff;
+      background: #141a32; border: 2px solid #2a335e; border-bottom-width: 4px;
+      border-radius: 14px; padding: 14px;
+      transition: transform .08s, border-color .12s, background .12s;
+    }
+    .card:hover { transform: translateY(-3px); border-color: #ffe14d; background: #1a2240; }
+    .chead { font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #000; flex: none; }
+    .catk { font-size: 12px; color: #ffd86b; font-weight: 700; margin: 5px 0 10px; }
+    .st { display: flex; align-items: center; gap: 8px; font-size: 11px; margin: 4px 0; color: #aeb8e0; }
+    .st span { width: 66px; flex: none; }
+    .st i { flex: 1; height: 7px; background: #0e1226; border-radius: 4px; overflow: hidden; }
+    .st b { display: block; height: 100%; background: #56d364; }
   </style>
 </head>
 <body>
@@ -85,6 +115,13 @@
   <div id="fx"></div>
   <div id="bars"></div>
   <div id="banner"></div>
+
+  <!-- menu výběru dinosaura -->
+  <div id="menu">
+    <h1>🦖 DINORACE</h1>
+    <div class="sub">Vyber svého dinosaura</div>
+    <div id="cards"></div>
+  </div>
 
   <div id="help">
     <b>Řízení:</b> <kbd>W</kbd>/<kbd>↑</kbd> plyn · <kbd>S</kbd>/<kbd>↓</kbd> brzda ·

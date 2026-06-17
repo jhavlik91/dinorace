@@ -44,22 +44,38 @@ function part(geometry, mat, thickness = OUTLINE) {
 }
 
 // Definice druhů: barva + typ útoku + dosah/úhel + vzor kůže.
+// Staty: topSpeed, accel (zrychlení), turn (zatáčení), hp (výdrž), dmg (síla útoku),
+// reach/arc (dosah a úhel zásahu). Každý druh hraje trochu jinak.
 export const SPECIES = {
   trex: {
-    name: 'T-Rex',        color: 0x6fae5a, attack: 'Kousnutí',
-    attackPart: 'head',   reach: 4.2, arc: 0.5,  topSpeed: 33, accel: 22, skin: 'stripes',
+    name: 'T-Rex',        color: 0x6fae5a, attack: 'Kousnutí',  skin: 'stripes',
+    attackPart: 'head',   reach: 4.2, arc: 0.5,
+    topSpeed: 33, accel: 22, turn: 2.2, hp: 120, dmg: 26,
   },
   raptor: {
-    name: 'Raptor',       color: 0xd9a441, attack: 'Sek drápem',
-    attackPart: 'arm',    reach: 3.4, arc: 0.7,  topSpeed: 38, accel: 27, skin: 'stripes',
+    name: 'Raptor',       color: 0xd9a441, attack: 'Sek drápem', skin: 'stripes',
+    attackPart: 'arm',    reach: 3.4, arc: 0.7,
+    topSpeed: 40, accel: 30, turn: 3.0, hp: 70,  dmg: 16,
   },
   ankylo: {
-    name: 'Ankylosaurus', color: 0x5a83ae, attack: 'Úder ocasem',
-    attackPart: 'tail',   reach: 4.6, arc: 0.9,  topSpeed: 28, accel: 18, skin: 'spots',
+    name: 'Ankylosaurus', color: 0x5a83ae, attack: 'Úder ocasem', skin: 'spots',
+    attackPart: 'tail',   reach: 4.6, arc: 0.9,
+    topSpeed: 27, accel: 17, turn: 1.8, hp: 150, dmg: 24,
   },
   trike: {
-    name: 'Triceratops',  color: 0xb56ab0, attack: 'Náraz rohem',
-    attackPart: 'head',   reach: 3.8, arc: 0.45, topSpeed: 31, accel: 24, skin: 'spots',
+    name: 'Triceratops',  color: 0xb56ab0, attack: 'Náraz rohem', skin: 'spots',
+    attackPart: 'head',   reach: 3.8, arc: 0.45,
+    topSpeed: 32, accel: 24, turn: 2.0, hp: 120, dmg: 24,
+  },
+  stego: {
+    name: 'Stegosaurus',  color: 0x9c7b4a, attack: 'Ostny ocasu', skin: 'spots',
+    attackPart: 'tail',   reach: 5.0, arc: 1.0,
+    topSpeed: 28, accel: 18, turn: 1.9, hp: 135, dmg: 22,
+  },
+  pachy: {
+    name: 'Pachycefalosaurus', color: 0xc9925a, attack: 'Náraz hlavou', skin: 'stripes',
+    attackPart: 'head',   reach: 3.6, arc: 0.5,
+    topSpeed: 36, accel: 26, turn: 2.6, hp: 95,  dmg: 20,
   },
 };
 
@@ -91,11 +107,20 @@ export function buildDino(speciesKey) {
   bellyMesh.position.set(0, 0.85, 0.05);
   body.add(bellyMesh);
 
-  // hřbetní ostny podél páteře (komiksový detail)
-  for (let i = 0; i < 5; i++) {
-    const sp = part(new THREE.ConeGeometry(0.13, 0.42, 6), darkHex);
-    sp.position.set(0, 1.85, 0.75 - i * 0.42);
-    body.add(sp);
+  // hřbet: Stegosaurus má velké desky, ostatní řadu menších ostnů
+  if (speciesKey === 'stego') {
+    for (let i = 0; i < 6; i++) {
+      const plate = part(new THREE.ConeGeometry(0.55, 0.9, 3), darkHex);
+      plate.scale.x = 0.22;                 // zploštění → deska
+      plate.position.set(0, 2.0, 0.95 - i * 0.42);
+      body.add(plate);
+    }
+  } else {
+    for (let i = 0; i < 5; i++) {
+      const sp = part(new THREE.ConeGeometry(0.13, 0.42, 6), darkHex);
+      sp.position.set(0, 1.85, 0.75 - i * 0.42);
+      body.add(sp);
+    }
   }
 
   // krk + hlava (pivot na krku kvůli kousnutí)
@@ -139,6 +164,20 @@ export function buildDino(speciesKey) {
     crest.position.set(0, 0.55, 0.6);
     neck.add(crest);
   }
+  // kostěná kopule lebky + hrbolky pro Pachycefalosaura
+  if (speciesKey === 'pachy') {
+    const dome = part(new THREE.SphereGeometry(0.6, 14, 12), skinMat);
+    dome.scale.set(1, 0.8, 1);
+    dome.position.set(0, 0.5, 0.45);
+    neck.add(dome);
+    for (let a = 0; a < 7; a++) {
+      const ang = a / 6 * Math.PI - Math.PI / 2;
+      const nub = part(new THREE.ConeGeometry(0.08, 0.2, 5), BONE, 0.07);
+      nub.position.set(Math.sin(ang) * 0.55, 0.32, 0.45 + Math.cos(ang) * 0.35);
+      nub.rotation.x = -Math.PI / 3;
+      neck.add(nub);
+    }
+  }
   // límec (frill) + nadočnicové rohy pro Triceratopse
   if (speciesKey === 'trike') {
     const frill = part(new THREE.CylinderGeometry(1.05, 1.05, 0.2, 16, 1, false, 0, Math.PI),
@@ -173,6 +212,15 @@ export function buildDino(speciesKey) {
     const sp = part(new THREE.ConeGeometry(0.1, 0.3, 6), darkHex);
     sp.position.set(0, 0.3, -0.3 - i * 0.5);
     tail.add(sp);
+  }
+  if (speciesKey === 'stego') { // thagomizer – čtyři ostny na konci ocasu
+    for (const sx of [-0.4, 0.4]) for (const yy of [0.0, 0.45]) {
+      const sp = part(new THREE.ConeGeometry(0.11, 0.7, 6), BONE, 0.07);
+      sp.position.set(sx, 0.2 + yy, -1.95);
+      sp.rotation.x = -Math.PI / 2 - 0.3;
+      sp.rotation.z = sx > 0 ? 0.35 : -0.35;
+      tail.add(sp);
+    }
   }
   if (speciesKey === 'ankylo') { // velký kostěný kyj
     const club = part(new THREE.SphereGeometry(0.6, 12, 10), 0x9aa7b5);
