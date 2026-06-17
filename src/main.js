@@ -37,11 +37,11 @@ const ROSTER = [
 const TOTAL = ROSTER.length;
 
 // vstupní schémata (boost = turbo)
-const SCHEME_WASD = { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], boost: ['ShiftLeft'], attack: 'Space' };
-const SCHEME_ARROWS = { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], boost: ['ShiftRight'], attack: 'Enter' };
+const SCHEME_WASD = { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], boost: ['ShiftLeft'], attack: 'Space', use: ['KeyE'] };
+const SCHEME_ARROWS = { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], boost: ['ShiftRight'], attack: 'Enter', use: ['Slash'] };
 const SCHEME_BOTH = {
   up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-  boost: ['ShiftLeft', 'ShiftRight'], attack: 'Space',
+  boost: ['ShiftLeft', 'ShiftRight'], attack: 'Space', use: ['KeyE'],
 };
 
 // ---------- závodníci ----------
@@ -78,6 +78,8 @@ for (let i = 0; i < TOTAL; i++) {
     speed: 0, wpIndex: 0, lap: 1, armed: false,
     hp: dino.spec.hp, down: 0,
     stamina: 0, boosting: false,           // turbo se získává zásahy, start na nule
+    rage: 0,                               // 0–100; roste zásahy/těsným průjezdem
+    item: null, skateTimer: 0, shield: 0,  // power-upy
     stun: 0, attackTimer: 0, runPhase: Math.random() * 6,
     finished: false, finishTime: 0, offTrack: false,
   });
@@ -102,6 +104,110 @@ for (const r of racers) {
   r.ui = { box, tag, fill };
 }
 barsLayer.style.display = 'none';
+
+// ---------- power-upy ----------
+const ITEMS = {
+  brusle: { name: '🛼 Brusle' },   // +30 % rychlost na 5 s
+  banan: { name: '🍌 Banán' },     // past: otočka + stun
+  vejce: { name: '🥚 Dino vejce' },// projektil: damage + zpomalení
+  stit: { name: '🛡️ Štít' },       // pohltí útoky/pasti na 6 s
+};
+
+// bedny s power-upy rozmístěné po trati
+const crates = [];
+{
+  const geo = new THREE.BoxGeometry(2, 2, 2);
+  for (let i = 6; i < N; i += 10) {
+    const p = PATH[i];
+    const mesh = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ color: 0xffd54a, gradientMap: undefined }));
+    const o = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x10131c, side: THREE.BackSide }));
+    o.scale.setScalar(1.08); mesh.add(o);
+    mesh.position.set(p.x, 1.4, p.z);
+    scene.add(mesh);
+    crates.push({ pos: new THREE.Vector3(p.x, 0, p.z), mesh, active: true, respawn: 0, bob: Math.random() * 6 });
+  }
+}
+
+const hazards = []; // banány a vejce na trati
+function hazardMesh(type) {
+  const m = type === 'banan'
+    ? new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.7, 4, 8), new THREE.MeshToonMaterial({ color: 0xffe14d }))
+    : new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), new THREE.MeshToonMaterial({ color: 0xefe2c0 }));
+  const o = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({ color: 0x10131c, side: THREE.BackSide }));
+  o.scale.setScalar(1.1); m.add(o);
+  return m;
+}
+function dirOf(r) { return new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading)); }
+
+function useItem(r) {
+  if (!r.item || r.down > 0) return;
+  const it = r.item; r.item = null;
+  if (it === 'brusle') r.skateTimer = 5;
+  else if (it === 'stit') r.shield = 6;
+  else if (it === 'banan') {
+    const pos = r.pos.clone().addScaledVector(dirOf(r), -3);
+    const mesh = hazardMesh('banan'); mesh.position.set(pos.x, 0.5, pos.z); scene.add(mesh);
+    hazards.push({ type: 'banan', pos, owner: r, mesh, life: 18, armed: 0.6 });
+  } else if (it === 'vejce') {
+    const pos = r.pos.clone().addScaledVector(dirOf(r), 2.5);
+    const mesh = hazardMesh('vejce'); mesh.position.set(pos.x, 0.9, pos.z); scene.add(mesh);
+    hazards.push({ type: 'vejce', pos, vel: dirOf(r).multiplyScalar(48), owner: r, mesh, life: 3 });
+  }
+}
+
+function randomItem(p) { // catch-up: vzadu silnější předměty
+  const back = placeOf(p) > RACER_COUNT / 2;
+  const pool = back ? ['vejce', 'brusle', 'stit', 'vejce', 'brusle', 'banan']
+    : ['banan', 'vejce', 'brusle', 'stit'];
+  return pool[(Math.random() * pool.length) | 0];
+}
+
+function updatePickups(dt) {
+  for (const c of crates) {
+    if (!c.active) { c.respawn -= dt; if (c.respawn <= 0) { c.active = true; c.mesh.visible = true; } continue; }
+    c.bob += dt * 3;
+    c.mesh.rotation.y += dt * 2;
+    c.mesh.position.y = 1.4 + Math.sin(c.bob) * 0.25;
+    for (const p of players) {
+      if (p.item || p.down > 0) continue;
+      if (Math.hypot(p.pos.x - c.pos.x, p.pos.z - c.pos.z) < 2.6) {
+        p.item = randomItem(p);
+        c.active = false; c.mesh.visible = false; c.respawn = 4;
+        if (p.isPlayer) addShake(0.2);
+        break;
+      }
+    }
+  }
+}
+
+function updateHazards(dt) {
+  for (let i = hazards.length - 1; i >= 0; i--) {
+    const h = hazards[i];
+    h.life -= dt;
+    if (h.armed) h.armed -= dt;
+    if (h.vel) h.pos.addScaledVector(h.vel, dt);
+    h.mesh.position.set(h.pos.x, h.mesh.position.y, h.pos.z);
+    if (h.type === 'banan') h.mesh.rotation.y += dt * 2;
+    else h.mesh.rotation.x += dt * 9;
+
+    let hit = false;
+    for (const r of racers) {
+      if (r.down > 0) continue;
+      if (r === h.owner && (h.armed > 0 || h.type === 'vejce')) continue; // majitele chvíli/nikdy netrefí
+      if (Math.hypot(r.pos.x - h.pos.x, r.pos.z - h.pos.z) > 2.0) continue;
+      hit = true;
+      if (r.shield > 0) { popFx(r); break; }           // štít pohltí
+      if (h.type === 'banan') { r.stun = 1.0; r.speed *= 0.3; r.heading += Math.PI; }
+      else { r.hp -= 14; r.speed *= 0.4; r.stun = 0.6; if (r.hp <= 0) { r.hp = 0; r.down = KO_TIME; } }
+      if (r.isPlayer) addShake(0.6);
+      popFx(r);
+      break;
+    }
+    if (hit || h.life <= 0) { scene.remove(h.mesh); hazards.splice(i, 1); }
+  }
+}
+window.__dino.crates = crates;
+window.__dino.hazards = hazards;
 
 // ---------- menu ----------
 const STAT_DEFS = [
@@ -213,11 +319,14 @@ function buildPanel(p, side, badge, color) {
     `<div class="pinfo"></div>` +
     `<div class="pb"><span>HP</span><i><b class="hpb"></b></i></div>` +
     `<div class="pb"><span>Turbo</span><i><b class="stb"></b></i></div>` +
-    `<div class="pspeed"><b>0</b> <small>km/h</small></div>`;
+    `<div class="pb"><span>Rage</span><i><b class="rgb" style="background:linear-gradient(90deg,#ffb24a,#f8514a)"></b></i></div>` +
+    `<div class="pspeed"><b>0</b> <small>km/h</small></div>` +
+    `<div class="pinfo">Předmět: <b class="itm" style="color:#ffe14d">—</b></div>`;
   document.body.appendChild(el);
   p.hud = {
     info: el.querySelector('.pinfo'), hp: el.querySelector('.hpb'),
-    st: el.querySelector('.stb'), speed: el.querySelector('.pspeed b'),
+    st: el.querySelector('.stb'), rg: el.querySelector('.rgb'),
+    speed: el.querySelector('.pspeed b'), itm: el.querySelector('.itm'),
   };
 }
 
@@ -231,7 +340,10 @@ function setAspects() {
 const keys = {};
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (racing) for (const p of players) if (e.code === p.scheme.attack) { e.preventDefault(); triggerAttack(p); }
+  if (racing) for (const p of players) {
+    if (e.code === p.scheme.attack) { e.preventDefault(); triggerAttack(p); }
+    if (p.scheme.use.includes(e.code)) { e.preventDefault(); useItem(p); }
+  }
   if (e.code === 'KeyR') location.reload();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -240,6 +352,10 @@ addEventListener('resize', () => {
   if (started) setAspects();
   else { cams[0].aspect = innerWidth / innerHeight; cams[0].updateProjectionMatrix(); }
 });
+
+// ---------- juice: screen shake ----------
+let shakeMag = 0;
+function addShake(m) { shakeMag = Math.min(1.4, Math.max(shakeMag, m)); }
 
 // ---------- útok (směrové laloky: před/za/vedle) ----------
 function triggerAttack(r) {
@@ -264,13 +380,25 @@ function resolveAttackHit(r) {
   for (const o of racers) {
     if (o === r || o.down > 0) continue;
     if (!inAttackZone(r, o, 0, 0)) continue;
+    if (o.shield > 0) { popFx(o); continue; }              // štít pohltí útok
     popFx(o);
     r.stamina = Math.min(r.spec.stamina, r.stamina + 1.6); // turbo za povedený útok
-    // agresivní raptoři hráče jen otravují: omráčí a odstrčí, ale neknockoutují
-    if (r.aggressive && o.isPlayer) { o.stun = 0.9; o.speed *= 0.4; continue; }
+    if (r.isPlayer || o.isPlayer) addShake(0.7);           // juice: otřes obrazu
+    // knockback: odhození soupeře pryč od útočníka
+    const kx = o.pos.x - r.pos.x, kz = o.pos.z - r.pos.z, kd = Math.hypot(kx, kz) || 1;
+
+    if (r.aggressive && o.isPlayer) {       // raptoři jen otravují, neK.O., ubírají Rage
+      o.stun = 0.9; o.speed *= 0.4;
+      o.pos.x += kx / kd * 2.4; o.pos.z += kz / kd * 2.4;
+      o.rage = Math.max(0, o.rage - 22);
+      continue;
+    }
+    if (!r.aggressive) r.rage = Math.min(100, r.rage + 18); // Rage za povedený útok
+    o.rage = Math.min(100, o.rage + 10);                    // i zásah tě „nažhaví"
+    o.pos.x += kx / kd * 3.0; o.pos.z += kz / kd * 3.0;     // odhození
     o.hp -= r.spec.dmg;
-    if (o.hp <= 0) { o.hp = 0; o.down = KO_TIME; o.stun = 0; o.speed *= 0.2; popFx(o); }
-    else { o.stun = 0.9; o.speed *= 0.5; }
+    if (o.hp <= 0) { o.hp = 0; o.down = KO_TIME; o.stun = 0; o.speed *= 0.15; popFx(o); }
+    else { o.stun = 0.9; o.speed *= 0.45; }
   }
 }
 
@@ -363,8 +491,11 @@ function fleeAway(r, dt) {
 // pole skutečných závodníků (raptoři se nepočítají)
 function raceField() { return racers.filter(x => !x.aggressive); }
 function leadRacer() { return raceField().sort((a, b) => progressScore(b) - progressScore(a))[0]; }
-function aggroTarget() { // jen dokud je první hráč a po úvodním spánku
+function aggroTarget() { // priorita: hráč s nejvyšším Rage, jinak vedoucí hráč
   if (raceTime < RAPTOR_DELAY) return null;
+  const ps = players.filter(p => !p.finished && p.down <= 0);
+  const byRage = ps.slice().sort((a, b) => b.rage - a.rage)[0];
+  if (byRage && byRage.rage >= 50) return byRage;
   const l = leadRacer();
   return l && l.isPlayer ? l : null;
 }
@@ -391,12 +522,21 @@ function integrate(r, dt) {
   }
   r.speed *= (1 - 0.6 * dt);
 
+  // Rage pomalu opadá; vysoký Rage = vyšší max. rychlost a rychlejší regen turba
+  r.rage = Math.max(0, r.rage - 5 * dt);
+  const rageMult = 1 + 0.15 * (r.rage / 100);
+  // power-up efekty
+  if (r.skateTimer > 0) r.skateTimer -= dt;
+  if (r.shield > 0) r.shield -= dt;
+  const skate = r.skateTimer > 0 ? 1.3 : 1;
+
   // turbo: krátkodobé zrychlení nad maximum, ujídá výdrž; jinak se pomalu doplňuje
   const boosting = r.boosting && r.stamina > 0 && r.down <= 0;
   if (boosting) { r.speed += r.spec.accel * 0.8 * dt; r.stamina = Math.max(0, r.stamina - 3 * dt); }
-  else if (r.down <= 0) r.stamina = Math.min(r.spec.stamina, r.stamina + 0.6 * dt); // pasivní doplnění
-  // agresoři v honu mají obří strop (~500 km/h); ostatní normální turbo
-  const cap = r.megaBoost ? AGGRO_CAP : boosting ? r.spec.topSpeed * 1.45 : r.spec.topSpeed;
+  else if (r.down <= 0) r.stamina = Math.min(r.spec.stamina, r.stamina + 0.6 * (1 + r.rage / 100) * dt);
+  const base = r.spec.topSpeed * rageMult * skate;
+  // agresoři v honu mají obří strop; ostatní normální turbo (× Rage × brusle)
+  const cap = r.megaBoost ? AGGRO_CAP : boosting ? base * 1.45 : base;
   r.speed = THREE.MathUtils.clamp(r.speed, 0, cap);
 
   r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
@@ -411,7 +551,7 @@ function integrate(r, dt) {
     const dist = d.length();
     if (dist > 0.001 && dist < 2.6) r.pos.addScaledVector(d.normalize(), (2.6 - dist) * 0.5);
   }
-  // kolize s budovami/landmarky
+  // kolize s budovami/landmarky (+ Rage za těsný průjezd)
   for (const ob of OBST) {
     const dx = r.pos.x - ob.x, dz = r.pos.z - ob.z;
     const dist = Math.hypot(dx, dz);
@@ -420,6 +560,8 @@ function integrate(r, dt) {
       const push = min - dist;
       r.pos.x += dx / dist * push; r.pos.z += dz / dist * push;
       r.speed *= 0.5;
+    } else if (!r.aggressive && dist < min + 2.5 && r.speed > 12) {
+      r.rage = Math.min(100, r.rage + 12 * dt); // těsný průjezd kolem překážky
     }
   }
 }
@@ -494,6 +636,10 @@ function updateCamera(cam, p, dt) {
   const fwd = new THREE.Vector3(Math.sin(p.heading), 0, Math.cos(p.heading));
   const want = new THREE.Vector3().copy(p.pos).addScaledVector(fwd, -11).add(new THREE.Vector3(0, 7, 0));
   cam.position.lerp(want, Math.min(1, dt * 4));
+  if (shakeMag > 0.01) {
+    cam.position.x += (Math.random() - 0.5) * shakeMag * 2;
+    cam.position.y += (Math.random() - 0.5) * shakeMag * 2;
+  }
   cam.lookAt(p.pos.x, 2, p.pos.z);
 }
 
@@ -509,8 +655,20 @@ const elLap = document.querySelector('[data-lap]');
 const elPos = document.querySelector('[data-pos]');
 const elSpeed = document.querySelector('[data-speed]');
 const elStamina = document.querySelector('[data-stamina]');
+const elRage = document.querySelector('[data-rage]');
+const elItem = document.querySelector('[data-item]');
 const banner = document.getElementById('banner');
 let bannerLocked = false; // po START / CÍL
+
+// varování "RAPTOŘI TĚ LOVÍ!"
+const warnEl = document.getElementById('warn');
+let warnTO = 0, huntTarget = null;
+function showWarn() {
+  warnEl.textContent = '🦖 RAPTOŘI TĚ LOVÍ!';
+  warnEl.style.opacity = 1;
+  clearTimeout(warnTO);
+  warnTO = setTimeout(() => { warnEl.style.opacity = 0; }, 2500);
+}
 
 function updateHUD1() {
   const p = players[0];
@@ -521,6 +679,8 @@ function updateHUD1() {
   elSpeed.parentElement.style.color = p.offTrack ? '#e3b341' : '#fff';
   elStamina.style.width = Math.max(0, p.stamina / p.spec.stamina) * 100 + '%';
   elStamina.style.background = p.boosting ? '#ffd54a' : '#56d364';
+  elRage.style.width = p.rage + '%';
+  elItem.textContent = p.item ? ITEMS[p.item].name : '—';
   if (p.finished) showResult(place === 1);
 }
 
@@ -533,6 +693,8 @@ function updatePanels() {
     h.hp.style.background = p.down > 0 ? '#6b7280' : hpPct > 0.5 ? '#56d364' : hpPct > 0.25 ? '#e3b341' : '#f85149';
     h.st.style.width = Math.max(0, p.stamina / p.spec.stamina) * 100 + '%';
     h.st.style.background = p.boosting ? '#ffd54a' : '#56d364';
+    h.rg.style.width = p.rage + '%';
+    h.itm.textContent = p.item ? ITEMS[p.item].name : '—';
     h.speed.textContent = Math.round(p.speed * 3.6 * 1.6);
     h.speed.parentElement.style.color = p.offTrack ? '#e3b341' : '#fff';
   }
@@ -604,7 +766,13 @@ function loop(now) {
 
   if (started) {
     if (!racing) updateCountdown(dt);
-    else raceTime += dt;
+    else {
+      raceTime += dt;
+      shakeMag = Math.max(0, shakeMag - 2.5 * dt);
+      const ht = aggroTarget();
+      if (ht && ht !== huntTarget) showWarn(); // raptoři začínají lovit
+      huntTarget = ht;
+    }
     for (const r of racers) {
       if (racing) {
         if (r.down > 0) { /* sražený */ }
@@ -617,6 +785,7 @@ function loop(now) {
       }
       animateDino(r, dt);
     }
+    if (racing) { updatePickups(dt); updateHazards(dt); }
     for (const vp of viewports) updateCamera(vp.cam, vp.cam === cams[0] ? players[0] : players[1], dt);
     if (players.length === 1) { updateHUD1(); updateBars(); } else updatePanels();
     renderViews();
