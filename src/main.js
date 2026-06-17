@@ -248,9 +248,11 @@ function resolveAttackHit(r) {
   for (const o of racers) {
     if (o === r || o.down > 0) continue;
     if (!inAttackZone(r, o, 0, 0)) continue;
-    o.hp -= r.spec.dmg;
     popFx(o);
     r.stamina = Math.min(r.spec.stamina, r.stamina + 1.6); // turbo za povedený útok
+    // agresivní raptoři hráče jen otravují: omráčí a odstrčí, ale neknockoutují
+    if (r.aggressive && o.isPlayer) { o.stun = 0.9; o.speed *= 0.4; continue; }
+    o.hp -= r.spec.dmg;
     if (o.hp <= 0) { o.hp = 0; o.down = KO_TIME; o.stun = 0; o.speed *= 0.2; popFx(o); }
     else { o.stun = 0.9; o.speed *= 0.5; }
   }
@@ -295,27 +297,36 @@ function maybeAttack(r) {
   }
 }
 
-function steerAI(r, dt) {
+function followTrack(r, dt) { // jen jede po trati (bez útočení)
   r.megaBoost = false;
   const target = PATH[(r.wpIndex + 3) % N];
   r.heading += THREE.MathUtils.clamp(angTowards(r, target.x, target.z), -1, 1) * r.spec.turn * dt;
   r.speed += (r.spec.topSpeed * 0.86 - r.speed) * 1.5 * dt;
-  r.boosting = r.stamina > r.spec.stamina * 0.55; // boost jen občas, ne pořád
+  r.boosting = r.stamina > r.spec.stamina * 0.55;
+}
+
+function steerAI(r, dt) {
+  followTrack(r, dt);
   maybeAttack(r);
 }
 
 function steerAggressive(r, dt) {
   const t = aggroTarget();
-  // útočí JEN dokud je hráč první; jinak (AI v čele) prostě závodí
-  if (!t || t === r) { steerAI(r, dt); return; }
+  // útočí JEN dokud je hráč první; na 2. místě (i níž) přestanou a jen závodí
+  if (!t || t === r) { followTrack(r, dt); return; }
   r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.8 * dt;
+  r.boosting = false;
   const d = Math.hypot(t.pos.x - r.pos.x, t.pos.z - r.pos.z);
-  // HYPER BOOST: řítí se na hráče maximem a zůstává rychlý i blízko, aby neutekl;
-  // přibrzdí až těsně u něj (d<5), aby se stočil dovnitř a trefil, ne objel obloukem.
+  if (r.attackTimer > 0) {
+    // útočí → boost je jen na běhání, ne na útok: přibrzdí a netryská
+    r.megaBoost = false;
+    r.speed += (r.spec.topSpeed * 0.5 - r.speed) * 5 * dt;
+    return;
+  }
+  // HYPER BOOST: řítí se na hráče maximem i blízko (neutečeš); přibrzdí až těsně u něj
   const desired = d > 5 ? AGGRO_CAP : r.spec.topSpeed;
   r.speed += (desired - r.speed) * 9 * dt;
   r.megaBoost = d > 5;
-  r.boosting = false;
   if (d < r.spec.reach + 0.9) triggerAttack(r);
 }
 
