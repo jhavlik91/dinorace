@@ -23,7 +23,7 @@ const LAPS = 2;
 const OBST = world.obstacles;
 const DINO_R = 1.2;
 const KO_TIME = 3.5;
-const AGGRO_CAP = 100;  // hyper boost agresorů (~580 km/h) na vedoucího hráče
+const AGGRO_CAP = 135;  // hyper boost agresorů (~780 km/h) na vedoucího hráče
 
 const P1_COLOR = '#3b82f6', P2_COLOR = '#ef4444'; // modrá / červená
 
@@ -310,11 +310,11 @@ function steerAggressive(r, dt) {
   if (!t || t === r) { steerAI(r, dt); return; }
   r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.8 * dt;
   const d = Math.hypot(t.pos.x - r.pos.x, t.pos.z - r.pos.z);
-  // HYPER BOOST: daleko se řítí na hráče maximem (dožene téměř ihned), do ~14 j. prudce
-  // zpomalí na ovladatelnou rychlost, aby se stočil dovnitř a netrefil jen oblouk kolem.
-  const desired = d > 14 ? AGGRO_CAP : r.spec.topSpeed * 0.7;
-  r.speed += (desired - r.speed) * 8 * dt;
-  r.megaBoost = d > 14;
+  // HYPER BOOST: řítí se na hráče maximem a zůstává rychlý i blízko, aby neutekl;
+  // přibrzdí až těsně u něj (d<5), aby se stočil dovnitř a trefil, ne objel obloukem.
+  const desired = d > 5 ? AGGRO_CAP : r.spec.topSpeed;
+  r.speed += (desired - r.speed) * 9 * dt;
+  r.megaBoost = d > 5;
   r.boosting = false;
   if (d < r.spec.reach + 0.9) triggerAttack(r);
 }
@@ -411,7 +411,7 @@ function animateDino(r, dt) {
     const swing = Math.sin(p * Math.PI);
     const w = r.spec.attackPart;
     if (w === 'head' || w === 'both') { d.parts.neck.rotation.x = -swing * 0.6; d.parts.jaw.rotation.x = swing * 0.6; }
-    if (w === 'tail' || w === 'both') { d.parts.tail.rotation.y = swing * 1.6; }
+    if (w === 'tail' || w === 'both') { d.parts.tail.rotation.y = Math.sin(p * Math.PI * 2) * 1.7; } // švih na obě strany
     if (w === 'arm') { d.parts.arm.rotation.x = -swing * 1.4; }
     if (!r.attackHitDone && p > 0.5) { r.attackHitDone = true; resolveAttackHit(r); }
   } else {
