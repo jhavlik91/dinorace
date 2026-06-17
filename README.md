@@ -30,8 +30,9 @@ V menu zvol **1 hráč** nebo **2 hráči (split-screen)** a vyber dinosaura.
 | **TURBO** | **Shift** | **levý Shift** | **pravý Shift** |
 | restart | `R` | `R` | `R` |
 
-Závodí **10 dinosaurů**, mezi nimi **3 nesmyslně agresivní raptoři**, kteří jdou po
-vedoucím hráči. Po odpočtu **3-2-1 start**.
+Závodí **10 dinosaurů**, mezi nimi **3 nesmyslně agresivní raptoři**: dokud je hráč
+**první**, řítí se na něj v obřím turbu (~500 km/h) a otravují ho; jakmile hráč spadne
+z čela, dají pokoj a normálně závodí. Po odpočtu **3-2-1 start**.
 
 - **Útok** ubírá soupeři **odolnost**; po nasbírání zásahů jde k zemi (**K.O.**).
   Směr záleží na druhu: hlavou **před sebe**, ocasem **vedle a za**, Triceratops **před i za**.

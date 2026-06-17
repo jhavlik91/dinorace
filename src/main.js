@@ -23,6 +23,7 @@ const LAPS = 2;
 const OBST = world.obstacles;
 const DINO_R = 1.2;
 const KO_TIME = 3.5;
+const AGGRO_CAP = 86;   // ~500 km/h: agresoři se řítí na vedoucího hráče
 
 const P1_COLOR = '#3b82f6', P2_COLOR = '#ef4444'; // modrá / červená
 
@@ -59,7 +60,7 @@ for (let i = 0; i < TOTAL; i++) {
 
   racers.push({
     dino, speciesKey, spec: dino.spec,
-    isPlayer: false, aggressive: !!ROSTER[i].aggressive, scheme: null, hud: null,
+    isPlayer: false, aggressive: !!ROSTER[i].aggressive, megaBoost: false, rankBonus: 0, scheme: null, hud: null,
     pos, heading: Math.atan2(fwd0.x, fwd0.z),
     speed: 0, wpIndex: 0, lap: 1, armed: false,
     hp: dino.spec.hp, down: 0,
@@ -157,6 +158,10 @@ function startRace(pickKeys) {
   });
 
   if (players.length === 1) {
+    // single mode: hráč startuje vždy první (pole-position + drobný náskok v pořadí,
+    // který zmizí, jakmile ho někdo doopravdy předjede)
+    players[0].pos.copy(start).addScaledVector(fwd0, -2.5);
+    players[0].rankBonus = 0.5;
     viewports = [{ cam: cams[0], x: 0, y: 0, w: 1, h: 1 }];
     document.querySelector('[data-species]').textContent = players[0].spec.name;
     document.querySelector('[data-attack]').textContent = 'útok: ' + players[0].spec.attack;
@@ -291,6 +296,7 @@ function maybeAttack(r) {
 }
 
 function steerAI(r, dt) {
+  r.megaBoost = false;
   const target = PATH[(r.wpIndex + 3) % N];
   r.heading += THREE.MathUtils.clamp(angTowards(r, target.x, target.z), -1, 1) * r.spec.turn * dt;
   r.speed += (r.spec.topSpeed * 0.86 - r.speed) * 1.5 * dt;
@@ -300,17 +306,21 @@ function steerAI(r, dt) {
 
 function steerAggressive(r, dt) {
   const t = aggroTarget();
+  // útočí JEN dokud je hráč první; jinak (AI v čele) prostě závodí
   if (!t || t === r) { steerAI(r, dt); return; }
-  r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.1 * dt;
-  r.speed += (r.spec.topSpeed * 0.82 - r.speed) * 1.5 * dt; // pronásleduje, ale ne nesmyslně rychle
-  r.boosting = false;                                        // žádný turbo navíc
+  r.heading += THREE.MathUtils.clamp(angTowards(r, t.pos.x, t.pos.z), -1, 1) * r.spec.turn * 1.5 * dt;
   const d = Math.hypot(t.pos.x - r.pos.x, t.pos.z - r.pos.z);
-  if (d < r.spec.reach + 0.8) triggerAttack(r);
+  // daleko = obří turbo (řítí se na hráče), blízko = přibrzdí a otravuje
+  const desired = d > 9 ? AGGRO_CAP : r.spec.topSpeed * 0.75;
+  r.speed += (desired - r.speed) * 2.0 * dt;
+  r.megaBoost = d > 9;
+  r.boosting = false;
+  if (d < r.spec.reach + 0.9) triggerAttack(r);
 }
 
-function aggroTarget() { // hráč nejvíc vepředu (jdou po vedoucím hráči)
-  if (!players.length) return null;
-  return players.slice().sort((a, b) => progressScore(b) - progressScore(a))[0];
+function aggroTarget() { // jen když je první v závodě hráč – pak ho honí
+  const leader = [...racers].sort((a, b) => progressScore(b) - progressScore(a))[0];
+  return leader && leader.isPlayer ? leader : null;
 }
 
 function down(list) { for (const k of list) if (keys[k]) return true; return false; }
@@ -339,11 +349,12 @@ function integrate(r, dt) {
   const boosting = r.boosting && r.stamina > 0 && r.down <= 0;
   if (boosting) { r.speed += r.spec.accel * 0.8 * dt; r.stamina = Math.max(0, r.stamina - 3 * dt); }
   else if (r.down <= 0) r.stamina = Math.min(r.spec.stamina, r.stamina + 0.6 * dt); // pasivní doplnění
-  const cap = boosting ? r.spec.topSpeed * 1.45 : r.spec.topSpeed;
+  // agresoři v honu mají obří strop (~500 km/h); ostatní normální turbo
+  const cap = r.megaBoost ? AGGRO_CAP : boosting ? r.spec.topSpeed * 1.45 : r.spec.topSpeed;
   r.speed = THREE.MathUtils.clamp(r.speed, 0, cap);
 
   r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
-  if (r.offTrack) { r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5); r.speed *= (1 - 1.1 * dt); }
+  if (r.offTrack && !r.megaBoost) { r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5); r.speed *= (1 - 1.1 * dt); }
 
   const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
   r.pos.addScaledVector(fwd, r.speed * dt);
@@ -377,7 +388,7 @@ function updateProgress(r) {
     if (r.lap > LAPS && !r.finished) { r.finished = true; r.finishTime = performance.now(); }
   }
 }
-function progressScore(r) { return r.lap * N + r.wpIndex; }
+function progressScore(r) { return r.lap * N + r.wpIndex + r.rankBonus; }
 function placeOf(r) {
   return [...racers].sort((a, b) => progressScore(b) - progressScore(a)).indexOf(r) + 1;
 }
