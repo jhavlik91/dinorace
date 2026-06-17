@@ -11,6 +11,26 @@ function addOutline(mesh, s = 1.05) {
   return o;
 }
 
+// jemná tráva (dva odstíny zelené) – ať velká plocha není mrtvě plochá
+let _grassTex = null;
+function grassTex() {
+  if (_grassTex) return _grassTex;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#7fbf6a'; g.fillRect(0, 0, 64, 64);
+  for (let i = 0; i < 280; i++) {
+    g.fillStyle = Math.random() < 0.5 ? '#76b461' : '#8acb74';
+    g.fillRect(Math.random() * 64 | 0, Math.random() * 64 | 0, 2, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(80, 80);
+  t.magFilter = THREE.NearestFilter;
+  _grassTex = t;
+  return t;
+}
+
 // procedurální fasáda s okny (canvas textura), cache podle barev
 const _facadeCache = {};
 function facadeTex(wall, win) {
@@ -67,38 +87,54 @@ export function buildWorld(scene) {
   });
   scene.add(new THREE.Mesh(skyGeo, skyMat));
 
-  // --- tráva / zem ---
+  // --- tráva / zem (velká plocha, ať navazuje až k obzoru) ---
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(600, 600),
-    toonMat(0x7fbf6a)
+    new THREE.PlaneGeometry(1400, 1400),
+    new THREE.MeshToonMaterial({ color: 0xffffff, map: grassTex(), gradientMap: GRADIENT })
   );
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
 
-  // --- silnice jako stuha podél tratě ---
+  // --- silnice jako jedna souvislá stuha podél tratě (žádné mezery v zatáčkách) ---
   const path = makeTrackPath();
   const trackWidth = 12;
   const roadGroup = new THREE.Group();
   const roadMat = toonMat(0x3a3f4b);
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xffe14d });
-  for (let i = 0; i < path.length; i++) {
+  const n = path.length;
+  const hw = trackWidth / 2;
+  const verts = [];
+  for (let i = 0; i < n; i++) {
     const a = path[i];
-    const b = path[(i + 1) % path.length];
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz);
-    const seg = new THREE.Mesh(new THREE.PlaneGeometry(trackWidth, len + 0.5), roadMat);
-    seg.rotation.x = -Math.PI / 2;
-    seg.rotation.z = -Math.atan2(dz, dx) + Math.PI / 2;
-    seg.position.set((a.x + b.x) / 2, 0.03, (a.z + b.z) / 2);
-    roadGroup.add(seg);
-    // přerušovaná středová čára (každý druhý segment)
-    if (i % 2 === 0) {
-      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.5, len * 0.5), lineMat);
-      line.rotation.x = -Math.PI / 2;
-      line.rotation.z = seg.rotation.z;
-      line.position.set((a.x + b.x) / 2, 0.05, (a.z + b.z) / 2);
-      roadGroup.add(line);
-    }
+    const prev = path[(i - 1 + n) % n];
+    const next = path[(i + 1) % n];
+    // tečna ze sousedních bodů → kolmice = okraj silnice
+    const tx = next.x - prev.x, tz = next.z - prev.z;
+    const tl = Math.hypot(tx, tz) || 1;
+    const nx = -tz / tl, nz = tx / tl;
+    verts.push(a.x + nx * hw, 0.03, a.z + nz * hw);  // levý okraj
+    verts.push(a.x - nx * hw, 0.03, a.z - nz * hw);  // pravý okraj
+  }
+  const idx = [];
+  for (let i = 0; i < n; i++) {
+    const i0 = i * 2, i1 = i * 2 + 1, j0 = ((i + 1) % n) * 2, j1 = ((i + 1) % n) * 2 + 1;
+    idx.push(i0, j0, i1, i1, j0, j1);
+  }
+  const roadGeo = new THREE.BufferGeometry();
+  roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  roadGeo.setIndex(idx);
+  roadGeo.computeVertexNormals();
+  roadGroup.add(new THREE.Mesh(roadGeo, roadMat));
+
+  // přerušovaná středová čára (krátké dílky podél osy)
+  for (let i = 0; i < n; i += 2) {
+    const a = path[i], b = path[(i + 1) % n];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.5, len * 0.5), lineMat);
+    line.rotation.x = -Math.PI / 2;
+    line.rotation.z = -Math.atan2(b.z - a.z, b.x - a.x) + Math.PI / 2;
+    line.position.set((a.x + b.x) / 2, 0.05, (a.z + b.z) / 2);
+    roadGroup.add(line);
   }
   scene.add(roadGroup);
 
@@ -144,6 +180,15 @@ export function buildWorld(scene) {
     roof.position.y = h / 2 + 0.35;
     addOutline(roof, 1.05);
     b.add(roof);
+
+    // sokl / přízemí – zřetelná spodní část domu opřená o trávu
+    const baseH = 2.4;
+    const base = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 1.05, baseH, d * 1.05),
+      toonMat(new THREE.Color(wall).multiplyScalar(0.6).getHex()));
+    base.position.y = -h / 2 + baseH / 2;
+    addOutline(base, 1.04);
+    b.add(base);
 
     cityGroup.add(b);
   }
