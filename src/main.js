@@ -45,6 +45,7 @@ for (let i = 0; i < TOTAL; i++) {
     pos, heading: Math.atan2(fwd0.x, fwd0.z),
     speed: 0, wpIndex: 0, lap: 1, armed: false,
     hp: dino.spec.hp, down: 0,
+    stamina: dino.spec.stamina, tired: false,
     stun: 0, attackTimer: 0, runPhase: Math.random() * 6,
     finished: false, finishTime: 0, offTrack: false,
   });
@@ -70,7 +71,7 @@ barsLayer.style.display = 'none';
 // ---------- menu výběru ----------
 const STAT_DEFS = [
   ['Rychlost', 'topSpeed'], ['Zrychlení', 'accel'], ['Zatáčení', 'turn'],
-  ['Výdrž', 'hp'], ['Útok', 'dmg'],
+  ['Odolnost', 'hp'], ['Výdrž', 'stamina'], ['Útok', 'dmg'],
 ];
 const ranges = {};
 for (const [, k] of STAT_DEFS) {
@@ -214,6 +215,14 @@ function integrate(r, dt) {
   r.speed *= (1 - 0.6 * dt);
   r.speed = THREE.MathUtils.clamp(r.speed, 0, r.spec.topSpeed);
 
+  // výdrž: ostré tempo ji ubírá, mírné doplňuje; po vyčerpání dino umdlí a zpomalí
+  const maxSt = r.spec.stamina;
+  const hard = r.speed > r.spec.topSpeed * 0.6;
+  r.stamina = THREE.MathUtils.clamp(r.stamina + (hard ? -dt : dt * 0.6), 0, maxSt);
+  if (r.stamina <= 0) r.tired = true;
+  else if (r.stamina > maxSt * 0.3) r.tired = false; // zotaví se až po doplnění ~30 %
+  if (r.tired) r.speed = Math.min(r.speed, r.spec.topSpeed * 0.6);
+
   // mimo trať = pomalejší
   r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
   if (r.offTrack) {
@@ -322,6 +331,7 @@ function menuCamera(now) {
 const elLap = document.querySelector('[data-lap]');
 const elPos = document.querySelector('[data-pos]');
 const elSpeed = document.querySelector('[data-speed]');
+const elStamina = document.querySelector('[data-stamina]');
 const banner = document.getElementById('banner');
 function updateHUD() {
   const sorted = [...racers].sort((a, b) => progressScore(b) - progressScore(a));
@@ -330,6 +340,9 @@ function updateHUD() {
   elPos.textContent = `Pozice ${place}/${TOTAL}`;
   elSpeed.textContent = Math.round(player.speed * 3.6 * 1.6);
   elSpeed.parentElement.style.color = player.offTrack ? '#e3b341' : '#fff';
+  // výdrž: zelená → při umdlení červená
+  elStamina.style.width = Math.max(0, player.stamina / player.spec.stamina) * 100 + '%';
+  elStamina.style.background = player.tired ? '#f85149' : '#56d364';
   if (player.finished) {
     banner.textContent = place === 1 ? '🏆 VÍTĚZSTVÍ!' : 'CÍL!';
     banner.style.opacity = 1;

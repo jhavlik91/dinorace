@@ -44,38 +44,39 @@ function part(geometry, mat, thickness = OUTLINE) {
 }
 
 // Definice druhů: barva + typ útoku + dosah/úhel + vzor kůže.
-// Staty: topSpeed, accel (zrychlení), turn (zatáčení), hp (výdrž), dmg (síla útoku),
+// Staty: topSpeed, accel (zrychlení), turn (zatáčení), hp (odolnost do K.O.),
+// stamina (výdrž – po vyčerpání dino umdlí a zpomalí), dmg (síla útoku),
 // reach/arc (dosah a úhel zásahu). Každý druh hraje trochu jinak.
 export const SPECIES = {
   trex: {
     name: 'T-Rex',        color: 0x6fae5a, attack: 'Kousnutí',  skin: 'stripes',
     attackPart: 'head',   reach: 4.2, arc: 0.5,
-    topSpeed: 33, accel: 22, turn: 2.2, hp: 120, dmg: 26,
+    topSpeed: 33, accel: 22, turn: 2.2, hp: 120, stamina: 6, dmg: 26,
   },
   raptor: {
     name: 'Raptor',       color: 0xd9a441, attack: 'Sek drápem', skin: 'stripes',
     attackPart: 'arm',    reach: 3.4, arc: 0.7,
-    topSpeed: 40, accel: 30, turn: 3.0, hp: 70,  dmg: 16,
+    topSpeed: 40, accel: 30, turn: 3.0, hp: 70,  stamina: 4, dmg: 16,
   },
   ankylo: {
     name: 'Ankylosaurus', color: 0x5a83ae, attack: 'Úder ocasem', skin: 'spots',
     attackPart: 'tail',   reach: 4.6, arc: 0.9,
-    topSpeed: 27, accel: 17, turn: 1.8, hp: 150, dmg: 24,
+    topSpeed: 27, accel: 17, turn: 1.8, hp: 150, stamina: 9, dmg: 24,
   },
   trike: {
     name: 'Triceratops',  color: 0xb56ab0, attack: 'Náraz rohem', skin: 'spots',
     attackPart: 'head',   reach: 3.8, arc: 0.45,
-    topSpeed: 32, accel: 24, turn: 2.0, hp: 120, dmg: 24,
+    topSpeed: 32, accel: 24, turn: 2.0, hp: 120, stamina: 6, dmg: 24,
   },
   stego: {
     name: 'Stegosaurus',  color: 0x9c7b4a, attack: 'Ostny ocasu', skin: 'spots',
     attackPart: 'tail',   reach: 5.0, arc: 1.0,
-    topSpeed: 28, accel: 18, turn: 1.9, hp: 135, dmg: 22,
+    topSpeed: 28, accel: 18, turn: 1.9, hp: 135, stamina: 8, dmg: 22,
   },
   pachy: {
     name: 'Pachycefalosaurus', color: 0xc9925a, attack: 'Náraz hlavou', skin: 'stripes',
     attackPart: 'head',   reach: 3.6, arc: 0.5,
-    topSpeed: 36, accel: 26, turn: 2.6, hp: 95,  dmg: 20,
+    topSpeed: 36, accel: 26, turn: 2.6, hp: 95,  stamina: 5, dmg: 20,
   },
 };
 
