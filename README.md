@@ -40,10 +40,11 @@ V menu zvol **1 hráč** nebo **2 hráči (split-screen)**, **svět** a vyber di
   Vysoký Rage = **vyšší max. rychlost** a **rychlejší regen turba**, ale **přitahuje raptory**
   (loví hráče s nejvyšším Rage). Pomalu opadá.
 - **Power-upy** sbíráš z **beden** na trati (max 1 najednou), použiješ klávesou:
-  - 🛼 **Brusle** – +30 % rychlost na 5 s
-  - 🛡️ **Štít** – pohltí útoky i pasti na 6 s
-  - 🍌 **Banán** – položíš past: koho trefí, otočí ho a omráčí
-  - 🥚 **Dino vejce** – projektil vpřed: poškození + zpomalení
+  - 🛼 **Brusle** – +30 % rychlost · 🚀 **Jetpack** – velké turbo, proletí soupeři
+  - 🪂 **Rogalo** – krátký let přes překážky i terén · 🛡️ **Štít** – pohltí útoky/pasti
+  - 👻 **Neviditelnost** – raptoři i útoky tě ignorují · 📢 **Dino řev** – plošně odhodí okolí
+  - 🍌 **Banán** (otočka+stun) · 🛢️ **Olej** (smyk) · 🥚 **Dino vejce** (projektil)
+  - 🪨 **Kámen** (velký knockback) · 🦴 **Kost** (naváděcí projektil)
 - **Catch-up**: kdo je vzadu, losuje silnější předměty.
 - Zásahy mají **knockback** a **screen shake**.
 

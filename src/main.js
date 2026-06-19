@@ -56,7 +56,7 @@ for (let i = 0; i < TOTAL; i++) {
     hp: dino.spec.hp, down: 0,
     stamina: 0, boosting: false,           // turbo se získává zásahy, start na nule
     rage: 0,                               // 0–100; roste zásahy/těsným průjezdem
-    item: null, skateTimer: 0, shield: 0,  // power-upy
+    item: null, skateTimer: 0, shield: 0, glide: 0, jet: 0, invis: 0, // power-upy
     stun: 0, attackTimer: 0, runPhase: Math.random() * 6,
     finished: false, finishTime: 0, offTrack: false,
   });
@@ -101,10 +101,17 @@ barsLayer.style.display = 'none';
 
 // ---------- power-upy ----------
 const ITEMS = {
-  brusle: { name: '🛼 Brusle' },   // +30 % rychlost na 5 s
-  banan: { name: '🍌 Banán' },     // past: otočka + stun
-  vejce: { name: '🥚 Dino vejce' },// projektil: damage + zpomalení
-  stit: { name: '🛡️ Štít' },       // pohltí útoky/pasti na 6 s
+  brusle: { name: '🛼 Brusle' },         // +30 % rychlost na 5 s
+  jetpack: { name: '🚀 Jetpack' },       // velké turbo, ignoruje kolize se soupeři
+  rogalo: { name: '🪂 Rogalo' },         // krátký let přes překážky a terén
+  stit: { name: '🛡️ Štít' },             // pohltí útoky/pasti na 6 s
+  neviditelnost: { name: '👻 Neviditelnost' }, // raptoři/útoky tě ignorují
+  rev: { name: '📢 Dino řev' },          // plošně odhodí okolní soupeře
+  banan: { name: '🍌 Banán' },           // past: otočka + stun
+  olej: { name: '🛢️ Olej' },             // skvrna: smyk, ztráta kontroly
+  vejce: { name: '🥚 Dino vejce' },      // projektil: damage + zpomalení
+  kamen: { name: '🪨 Kámen' },           // těžký projektil: velký knockback
+  kost: { name: '🦴 Kost' },             // naváděcí projektil na nejbližšího
 };
 
 // bedny s power-upy rozmístěné po trati (přestaví se při změně mapy)
@@ -139,37 +146,60 @@ function loadMap(mapKey) {
 }
 loadMap('city');
 
-const hazards = []; // banány a vejce na trati
+const hazards = []; // pasti a projektily na trati
 function hazardMesh(type) {
-  const m = type === 'banan'
-    ? new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.7, 4, 8), new THREE.MeshToonMaterial({ color: 0xffe14d }))
-    : new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), new THREE.MeshToonMaterial({ color: 0xefe2c0 }));
+  let m;
+  if (type === 'banan') m = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.7, 4, 8), new THREE.MeshToonMaterial({ color: 0xffe14d }));
+  else if (type === 'olej') m = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 0.12, 16), new THREE.MeshToonMaterial({ color: 0x26222c }));
+  else if (type === 'kamen') m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.8), new THREE.MeshToonMaterial({ color: 0x8d8576 }));
+  else if (type === 'kost') m = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.9, 4, 8), new THREE.MeshToonMaterial({ color: 0xefe7d0 }));
+  else m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), new THREE.MeshToonMaterial({ color: 0xefe2c0 })); // vejce
   const o = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({ color: 0x10131c, side: THREE.BackSide }));
   o.scale.setScalar(1.1); m.add(o);
   return m;
 }
 function dirOf(r) { return new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading)); }
+function dropHazard(r, type, off) {
+  const pos = r.pos.clone().addScaledVector(dirOf(r), off);
+  const mesh = hazardMesh(type); mesh.position.set(pos.x, type === 'olej' ? 0.08 : 0.5, pos.z); scene.add(mesh);
+  hazards.push({ type, pos, owner: r, mesh, life: 18, armed: 0.6 });
+}
+function shoot(r, type, speed) {
+  const pos = r.pos.clone().addScaledVector(dirOf(r), 2.6);
+  const mesh = hazardMesh(type); mesh.position.set(pos.x, 0.9, pos.z); scene.add(mesh);
+  hazards.push({ type, pos, vel: dirOf(r).multiplyScalar(speed), owner: r, mesh, life: 3.5 });
+}
+function roar(r) { // Dino řev: plošně odhodí soupeře v okolí
+  if (r.isPlayer) addShake(0.9);
+  for (const o of racers) {
+    if (o === r || o.down > 0 || o.invis > 0) continue;
+    const dx = o.pos.x - r.pos.x, dz = o.pos.z - r.pos.z, d = Math.hypot(dx, dz);
+    if (d > 12 || d < 0.001) continue;
+    o.pos.x += dx / d * 6; o.pos.z += dz / d * 6; o.stun = 1.0; o.speed *= 0.3; popFx(o);
+  }
+}
 
 function useItem(r) {
   if (!r.item || r.down > 0) return;
   const it = r.item; r.item = null;
   if (it === 'brusle') r.skateTimer = 5;
+  else if (it === 'jetpack') r.jet = 4;
+  else if (it === 'rogalo') r.glide = 4.5;
   else if (it === 'stit') r.shield = 6;
-  else if (it === 'banan') {
-    const pos = r.pos.clone().addScaledVector(dirOf(r), -3);
-    const mesh = hazardMesh('banan'); mesh.position.set(pos.x, 0.5, pos.z); scene.add(mesh);
-    hazards.push({ type: 'banan', pos, owner: r, mesh, life: 18, armed: 0.6 });
-  } else if (it === 'vejce') {
-    const pos = r.pos.clone().addScaledVector(dirOf(r), 2.5);
-    const mesh = hazardMesh('vejce'); mesh.position.set(pos.x, 0.9, pos.z); scene.add(mesh);
-    hazards.push({ type: 'vejce', pos, vel: dirOf(r).multiplyScalar(48), owner: r, mesh, life: 3 });
-  }
+  else if (it === 'neviditelnost') r.invis = 5;
+  else if (it === 'rev') roar(r);
+  else if (it === 'banan') dropHazard(r, 'banan', -3);
+  else if (it === 'olej') dropHazard(r, 'olej', -3);
+  else if (it === 'vejce') shoot(r, 'vejce', 48);
+  else if (it === 'kamen') shoot(r, 'kamen', 38);
+  else if (it === 'kost') shoot(r, 'kost', 42);
 }
 
 function randomItem(p) { // catch-up: vzadu silnější předměty
   const back = placeOf(p) > RACER_COUNT / 2;
-  const pool = back ? ['vejce', 'brusle', 'stit', 'vejce', 'brusle', 'banan']
-    : ['banan', 'vejce', 'brusle', 'stit'];
+  const pool = back
+    ? ['kamen', 'kost', 'vejce', 'jetpack', 'rogalo', 'stit', 'rev', 'neviditelnost', 'brusle']
+    : ['banan', 'olej', 'vejce', 'brusle', 'stit', 'rogalo', 'kost'];
   return pool[(Math.random() * pool.length) | 0];
 }
 
@@ -196,21 +226,47 @@ function updateHazards(dt) {
     const h = hazards[i];
     h.life -= dt;
     if (h.armed) h.armed -= dt;
+    if (h.type === 'kost' && h.vel) { // navádění na nejbližšího soupeře
+      let best = null, bd = 1e9;
+      for (const r of racers) {
+        if (r === h.owner || r.down > 0 || r.invis > 0) continue;
+        const d = Math.hypot(r.pos.x - h.pos.x, r.pos.z - h.pos.z);
+        if (d < bd) { bd = d; best = r; }
+      }
+      if (best) {
+        const sp = h.vel.length() || 1;
+        const tx = (best.pos.x - h.pos.x), tz = (best.pos.z - h.pos.z), tl = Math.hypot(tx, tz) || 1;
+        const mx = h.vel.x / sp + (tx / tl - h.vel.x / sp) * Math.min(1, 4 * dt);
+        const mz = h.vel.z / sp + (tz / tl - h.vel.z / sp) * Math.min(1, 4 * dt);
+        const ml = Math.hypot(mx, mz) || 1;
+        h.vel.set(mx / ml * sp, 0, mz / ml * sp);
+      }
+    }
     if (h.vel) h.pos.addScaledVector(h.vel, dt);
     h.mesh.position.set(h.pos.x, h.mesh.position.y, h.pos.z);
-    if (h.type === 'banan') h.mesh.rotation.y += dt * 2;
+    if (h.type === 'banan' || h.type === 'olej') h.mesh.rotation.y += dt * 2;
     else h.mesh.rotation.x += dt * 9;
 
     let hit = false;
     for (const r of racers) {
-      if (r.down > 0) continue;
-      if (r === h.owner && (h.armed > 0 || h.type === 'vejce')) continue; // majitele chvíli/nikdy netrefí
-      if (Math.hypot(r.pos.x - h.pos.x, r.pos.z - h.pos.z) > 2.0) continue;
+      if (r.down > 0 || r.invis > 0) continue;
+      if (r === h.owner && (h.armed > 0 || h.vel)) continue; // majitele chvíli/nikdy netrefí
+      const rad = h.type === 'olej' ? 1.7 : 2.0;
+      if (Math.hypot(r.pos.x - h.pos.x, r.pos.z - h.pos.z) > rad) continue;
       hit = true;
       if (r.shield > 0) { popFx(r); break; }           // štít pohltí
       if (h.type === 'banan') { r.stun = 1.0; r.speed *= 0.3; r.heading += Math.PI; }
-      else { r.hp -= 14; r.speed *= 0.4; r.stun = 0.6; if (r.hp <= 0) { r.hp = 0; r.down = KO_TIME; } }
-      if (r.isPlayer) addShake(0.6);
+      else if (h.type === 'olej') { r.stun = 0.7; r.speed *= 0.7; r.heading += (Math.random() - 0.5) * 2.4; }
+      else if (h.type === 'kamen') {
+        r.hp -= 18; r.speed *= 0.2; r.stun = 0.9;
+        const kx = r.pos.x - h.pos.x, kz = r.pos.z - h.pos.z, kd = Math.hypot(kx, kz) || 1;
+        r.pos.x += kx / kd * 5; r.pos.z += kz / kd * 5;
+        if (r.hp <= 0) { r.hp = 0; r.down = KO_TIME; }
+      } else { // vejce / kost
+        r.hp -= h.type === 'kost' ? 16 : 14; r.speed *= 0.4; r.stun = 0.6;
+        if (r.hp <= 0) { r.hp = 0; r.down = KO_TIME; }
+      }
+      if (r.isPlayer) addShake(h.type === 'kamen' ? 0.9 : 0.6);
       popFx(r);
       break;
     }
@@ -404,7 +460,7 @@ function inAttackZone(r, o, slackR, slackA) {
 
 function resolveAttackHit(r) {
   for (const o of racers) {
-    if (o === r || o.down > 0) continue;
+    if (o === r || o.down > 0 || o.invis > 0) continue; // neviditelného netrefíš
     if (!inAttackZone(r, o, 0, 0)) continue;
     if (o.shield > 0) { popFx(o); continue; }              // štít pohltí útok
     popFx(o);
@@ -519,11 +575,11 @@ function raceField() { return racers.filter(x => !x.aggressive); }
 function leadRacer() { return raceField().sort((a, b) => progressScore(b) - progressScore(a))[0]; }
 function aggroTarget() { // priorita: hráč s nejvyšším Rage, jinak vedoucí hráč
   if (raceTime < RAPTOR_DELAY) return null;
-  const ps = players.filter(p => !p.finished && p.down <= 0);
+  const ps = players.filter(p => !p.finished && p.down <= 0 && p.invis <= 0); // neviditelného neloví
   const byRage = ps.slice().sort((a, b) => b.rage - a.rage)[0];
   if (byRage && byRage.rage >= 50) return byRage;
   const l = leadRacer();
-  return l && l.isPlayer ? l : null;
+  return l && l.isPlayer && l.invis <= 0 ? l : null;
 }
 
 function down(list) { for (const k of list) if (keys[k]) return true; return false; }
@@ -551,10 +607,13 @@ function integrate(r, dt) {
   // Rage pomalu opadá; vysoký Rage = vyšší max. rychlost a rychlejší regen turba
   r.rage = Math.max(0, r.rage - 5 * dt);
   const rageMult = 1 + 0.15 * (r.rage / 100);
-  // power-up efekty
+  // power-up efekty (časovače)
   if (r.skateTimer > 0) r.skateTimer -= dt;
   if (r.shield > 0) r.shield -= dt;
-  const skate = r.skateTimer > 0 ? 1.3 : 1;
+  if (r.glide > 0) r.glide -= dt;
+  if (r.jet > 0) r.jet -= dt;
+  if (r.invis > 0) r.invis -= dt;
+  const skate = (r.skateTimer > 0 ? 1.3 : 1) * (r.jet > 0 ? 1.5 : 1);
 
   // turbo: krátkodobé zrychlení nad maximum, ujídá výdrž; jinak se pomalu doplňuje
   const boosting = r.boosting && r.stamina > 0 && r.down <= 0;
@@ -565,19 +624,22 @@ function integrate(r, dt) {
   const cap = r.megaBoost ? AGGRO_CAP : boosting ? base * 1.45 : base;
   r.speed = THREE.MathUtils.clamp(r.speed, 0, cap);
 
+  // mimo trať se jede pomaleji – pokud nelétáš na rogalu
   r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
-  if (r.offTrack && !r.megaBoost) { r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5); r.speed *= (1 - 1.1 * dt); }
+  if (r.offTrack && !r.megaBoost && r.glide <= 0) { r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5); r.speed *= (1 - 1.1 * dt); }
 
   const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
   r.pos.addScaledVector(fwd, r.speed * dt);
 
-  for (const o of racers) {
+  // odstrkávání závodníků (jetpack/rogalo přes ně proletí)
+  if (r.jet <= 0 && r.glide <= 0) for (const o of racers) {
     if (o === r) continue;
     const d = tmp.copy(r.pos).sub(o.pos); d.y = 0;
     const dist = d.length();
     if (dist > 0.001 && dist < 2.6) r.pos.addScaledVector(d.normalize(), (2.6 - dist) * 0.5);
   }
-  // kolize s budovami/landmarky (+ Rage za těsný průjezd)
+  // kolize s budovami/landmarky – při letu na rogalu se přeskočí
+  if (r.glide > 0) return;
   for (const ob of OBST) {
     const dx = r.pos.x - ob.x, dz = r.pos.z - ob.z;
     const dist = Math.hypot(dx, dz);
@@ -631,8 +693,10 @@ function animateDino(r, dt) {
     d.parts.jaw.rotation.x = 0; d.parts.arm.rotation.x = 0; d.parts.neck.rotation.x = 0;
   }
 
-  d.root.position.set(r.pos.x, 0, r.pos.z);
+  const flyY = r.glide > 0 ? 2.6 : r.jet > 0 ? 1.2 : 0;
+  d.root.position.set(r.pos.x, flyY, r.pos.z);
   d.root.rotation.y = r.heading;
+  d.root.visible = r.invis > 0 ? (Math.floor(performance.now() / 80) % 2 === 0) : true; // ghost flicker
   if (r.down > 0) d.body.rotation.z = 1.35;
   else if (r.stun > 0) d.body.rotation.z = Math.sin(performance.now() * 0.02) * 0.3;
   else d.body.rotation.z = 0;
