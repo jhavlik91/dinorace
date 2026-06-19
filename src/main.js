@@ -1,6 +1,6 @@
 // main.js — herní smyčka prototypu DinoRace (1 hráč i split-screen pro 2)
 import * as THREE from 'three';
-import { buildWorld } from './world.js';
+import { buildWorld, MAPS, MAP_KEYS } from './world.js';
 import { buildDino, SPECIES, SPECIES_KEYS } from './dino.js';
 
 // ---------- scéna ----------
@@ -16,11 +16,9 @@ scene.fog = new THREE.Fog(0xcdebff, 120, 340);
 function makeCamera() { return new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 600); }
 const cams = [makeCamera(), makeCamera()];
 
-const world = buildWorld(scene);
-const PATH = world.path;
-const N = PATH.length;
-const LAPS = 2;
-const OBST = world.obstacles;
+// mapa se načítá/přepíná za běhu (kvůli výběru světa v menu)
+let world, PATH, N, OBST, LAPS, start, fwd0, side0, lineupCenter;
+let selectedMap = 'city';
 const DINO_R = 1.2;
 const KO_TIME = 3.5;
 const AGGRO_CAP = 135;  // hyper boost agresorů (~780 km/h) na vedoucího hráče
@@ -44,37 +42,16 @@ const SCHEME_BOTH = {
   boost: ['ShiftLeft', 'ShiftRight'], attack: 'Space', use: ['KeyE'],
 };
 
-// ---------- závodníci ----------
-const start = PATH[0], next = PATH[1];
-const fwd0 = new THREE.Vector3().subVectors(next, start).normalize();
-const side0 = new THREE.Vector3(-fwd0.z, 0, fwd0.x);
+// ---------- závodníci (vytvoří se jednou, pozice nastaví placeRacers) ----------
 const racers = [];
-let gridN = 0, aggN = 0;
 for (let i = 0; i < TOTAL; i++) {
   const speciesKey = ROSTER[i].species;
-  const aggressive = !!ROSTER[i].aggressive;
   const dino = buildDino(speciesKey);
   scene.add(dino.root);
-
-  let pos;
-  if (aggressive) {
-    // raptoři číhají daleko za startem (mimo view), přiběhnou až po pár vteřinách
-    pos = new THREE.Vector3().copy(start)
-      .addScaledVector(fwd0, -170 - aggN * 8)
-      .addScaledVector(side0, (aggN - 1) * 10);
-    aggN++;
-  } else {
-    const col = gridN % 2, row = (gridN / 2) | 0; // 2 sloupce × řady
-    pos = new THREE.Vector3().copy(start)
-      .addScaledVector(side0, (col - 0.5) * 4.5)
-      .addScaledVector(fwd0, -5 - row * 4.5);
-    gridN++;
-  }
-
   racers.push({
     dino, speciesKey, spec: dino.spec,
-    isPlayer: false, aggressive, megaBoost: false, rankBonus: 0, scheme: null, hud: null,
-    pos, heading: Math.atan2(fwd0.x, fwd0.z),
+    isPlayer: false, aggressive: !!ROSTER[i].aggressive, megaBoost: false, rankBonus: 0, scheme: null, hud: null,
+    pos: new THREE.Vector3(), heading: 0,
     speed: 0, wpIndex: 0, lap: 1, armed: false,
     hp: dino.spec.hp, down: 0,
     stamina: 0, boosting: false,           // turbo se získává zásahy, start na nule
@@ -87,10 +64,27 @@ for (let i = 0; i < TOTAL; i++) {
 // agresivní raptoři NEJSOU závodníci – do pořadí se počítají jen ostatní
 const RACER_COUNT = racers.filter(r => !r.aggressive).length;
 
+// rozmístí závodníky na startovní rošt (raptoři číhají daleko mimo view)
+function placeRacers() {
+  let gridN = 0, aggN = 0;
+  const h0 = Math.atan2(fwd0.x, fwd0.z);
+  for (const r of racers) {
+    if (r.aggressive) {
+      r.pos.copy(start).addScaledVector(fwd0, -170 - aggN * 8).addScaledVector(side0, (aggN - 1) * 10);
+      aggN++;
+    } else {
+      const col = gridN % 2, row = (gridN / 2) | 0;
+      r.pos.copy(start).addScaledVector(side0, (col - 0.5) * 4.5).addScaledVector(fwd0, -5 - row * 4.5);
+      gridN++;
+    }
+    r.heading = h0; r.wpIndex = 0; r.lap = 1; r.speed = 0; r.rage = 0; r.item = null;
+  }
+}
+
 let players = [];
 let started = false, racing = false, countdown = 3.0, raceTime = 0;
 let viewports = [];
-window.__dino = { racers, path: PATH, get players() { return players; } };
+window.__dino = { racers, get path() { return PATH; }, get players() { return players; } };
 
 // plovoucí health bary (jen 1 hráč)
 const barsLayer = document.getElementById('bars');
@@ -113,20 +107,37 @@ const ITEMS = {
   stit: { name: '🛡️ Štít' },       // pohltí útoky/pasti na 6 s
 };
 
-// bedny s power-upy rozmístěné po trati
+// bedny s power-upy rozmístěné po trati (přestaví se při změně mapy)
 const crates = [];
-{
-  const geo = new THREE.BoxGeometry(2, 2, 2);
+const crateGeo = new THREE.BoxGeometry(2, 2, 2);
+function buildCrates() {
+  for (const c of crates) scene.remove(c.mesh);
+  crates.length = 0;
   for (let i = 6; i < N; i += 10) {
     const p = PATH[i];
-    const mesh = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ color: 0xffd54a, gradientMap: undefined }));
-    const o = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x10131c, side: THREE.BackSide }));
+    const mesh = new THREE.Mesh(crateGeo, new THREE.MeshToonMaterial({ color: 0xffd54a }));
+    const o = new THREE.Mesh(crateGeo, new THREE.MeshBasicMaterial({ color: 0x10131c, side: THREE.BackSide }));
     o.scale.setScalar(1.08); mesh.add(o);
     mesh.position.set(p.x, 1.4, p.z);
     scene.add(mesh);
     crates.push({ pos: new THREE.Vector3(p.x, 0, p.z), mesh, active: true, respawn: 0, bob: Math.random() * 6 });
   }
 }
+
+// načte/přepne mapu: postaví svět, přepočítá trať a rozmístí závodníky i bedny
+function loadMap(mapKey) {
+  if (world && world.group) scene.remove(world.group);
+  selectedMap = mapKey;
+  world = buildWorld(scene, mapKey);
+  PATH = world.path; N = PATH.length; OBST = world.obstacles; LAPS = world.laps;
+  start = PATH[0];
+  fwd0 = new THREE.Vector3().subVectors(PATH[1], start).normalize();
+  side0 = new THREE.Vector3(-fwd0.z, 0, fwd0.x);
+  lineupCenter = new THREE.Vector3().copy(start).addScaledVector(fwd0, -9);
+  placeRacers();
+  buildCrates();
+}
+loadMap('city');
 
 const hazards = []; // banány a vejce na trati
 function hazardMesh(type) {
@@ -242,6 +253,21 @@ for (const key of SPECIES_KEYS) {
   card.addEventListener('click', () => pickDino(key));
   cardsEl.appendChild(card);
   cardByKey[key] = card;
+}
+
+// tlačítka výběru mapy (přepnou svět živě i v pozadí menu)
+const mapsEl = document.getElementById('maps');
+for (const key of MAP_KEYS) {
+  const btn = document.createElement('button');
+  btn.dataset.map = key;
+  btn.textContent = MAPS[key].name;
+  if (key === selectedMap) btn.classList.add('on');
+  btn.addEventListener('click', () => {
+    if (key === selectedMap) return;
+    loadMap(key);
+    for (const b of mapsEl.children) b.classList.toggle('on', b === btn);
+  });
+  mapsEl.appendChild(btn);
 }
 
 for (const btn of document.querySelectorAll('#modes button')) {
@@ -643,7 +669,6 @@ function updateCamera(cam, p, dt) {
   cam.lookAt(p.pos.x, 2, p.pos.z);
 }
 
-const lineupCenter = new THREE.Vector3().copy(start).addScaledVector(fwd0, -9);
 function menuCamera(now) {
   const a = now * 0.00025;
   cams[0].position.set(lineupCenter.x + Math.cos(a) * 22, 11, lineupCenter.z + Math.sin(a) * 22);

@@ -20,7 +20,10 @@ Pak otevři vypsanou adresu (např. `http://localhost:3000` / `:8000`).
 
 ## Ovládání
 
-V menu zvol **1 hráč** nebo **2 hráči (split-screen)** a vyber dinosaura.
+V menu zvol **1 hráč** nebo **2 hráči (split-screen)**, **svět** a vyber dinosaura.
+
+**Světy:** 🏙️ Dino City (město), 🏝️ Tropická pláž (palmy, písek), 🧸 Dětské hřiště
+(barevné kostky) — každý má jinou trať, zem, oblohu i kulisy. Přepínají se v menu živě.
 
 | Akce | 1 hráč | Hráč 1 (split) | Hráč 2 (split) |
 |---|---|---|---|
