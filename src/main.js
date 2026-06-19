@@ -17,7 +17,7 @@ function makeCamera() { return new THREE.PerspectiveCamera(60, innerWidth / inne
 const cams = [makeCamera(), makeCamera()];
 
 // mapa se načítá/přepíná za běhu (kvůli výběru světa v menu)
-let world, PATH, N, OBST, LAPS, start, fwd0, side0, lineupCenter;
+let world, PATH, N, OBST, ZONES, LAPS, start, fwd0, side0, lineupCenter;
 let selectedMap = 'city';
 const DINO_R = 1.2;
 const KO_TIME = 3.5;
@@ -57,6 +57,7 @@ for (let i = 0; i < TOTAL; i++) {
     stamina: 0, boosting: false,           // turbo se získává zásahy, start na nule
     rage: 0,                               // 0–100; roste zásahy/těsným průjezdem
     item: null, skateTimer: 0, shield: 0, glide: 0, jet: 0, invis: 0, // power-upy
+    zone: null, zoneTimer: 0,               // danger zóna
     stun: 0, attackTimer: 0, runPhase: Math.random() * 6,
     finished: false, finishTime: 0, offTrack: false,
   });
@@ -84,7 +85,7 @@ function placeRacers() {
 let players = [];
 let started = false, racing = false, countdown = 3.0, raceTime = 0;
 let viewports = [];
-window.__dino = { racers, get path() { return PATH; }, get players() { return players; } };
+window.__dino = { racers, get path() { return PATH; }, get zones() { return ZONES; }, get players() { return players; } };
 
 // plovoucí health bary (jen 1 hráč)
 const barsLayer = document.getElementById('bars');
@@ -136,7 +137,7 @@ function loadMap(mapKey) {
   if (world && world.group) scene.remove(world.group);
   selectedMap = mapKey;
   world = buildWorld(scene, mapKey);
-  PATH = world.path; N = PATH.length; OBST = world.obstacles; LAPS = world.laps;
+  PATH = world.path; N = PATH.length; OBST = world.obstacles; ZONES = world.zones; LAPS = world.laps;
   start = PATH[0];
   fwd0 = new THREE.Vector3().subVectors(PATH[1], start).normalize();
   side0 = new THREE.Vector3(-fwd0.z, 0, fwd0.x);
@@ -177,6 +178,19 @@ function roar(r) { // Dino řev: plošně odhodí soupeře v okolí
     if (d > 12 || d < 0.001) continue;
     o.pos.x += dx / d * 6; o.pos.z += dz / d * 6; o.stun = 1.0; o.speed *= 0.3; popFx(o);
   }
+}
+
+function zoneHazard(r, type) { // riziko danger zóny
+  if (type === 'skaly') { r.speed *= 0.55; r.stun = Math.max(r.stun, 0.35); }
+  else if (type === 'hnizdo') {
+    r.hp -= 9; r.speed *= 0.6; r.stun = 0.5; popFx(r);
+    if (r.hp <= 0) { r.hp = 0; r.down = KO_TIME; }
+  } else if (type === 'teritorium') {
+    r.hp -= 13; r.speed *= 0.4; r.stun = 0.7;
+    const a = Math.random() * 6.28; r.pos.x += Math.cos(a) * 4; r.pos.z += Math.sin(a) * 4; popFx(r);
+    if (r.hp <= 0) { r.hp = 0; r.down = KO_TIME; }
+  }
+  if (r.isPlayer) addShake(type === 'teritorium' ? 0.8 : 0.4);
 }
 
 function useItem(r) {
@@ -624,9 +638,21 @@ function integrate(r, dt) {
   const cap = r.megaBoost ? AGGRO_CAP : boosting ? base * 1.45 : base;
   r.speed = THREE.MathUtils.clamp(r.speed, 0, cap);
 
-  // mimo trať se jede pomaleji – pokud nelétáš na rogalu
+  // danger zóny: bahno brzdí; ostatní jsou průjezditelné zkratky s rizikem
+  let inZone = null;
+  for (const z of ZONES) { if (Math.hypot(r.pos.x - z.x, r.pos.z - z.z) < z.r) { inZone = z; break; } }
+  r.zone = inZone ? inZone.type : null;
+  const shortcut = inZone && inZone.type !== 'bahno';
+
   r.offTrack = distToPath(r.pos.x, r.pos.z) > world.trackWidth / 2;
-  if (r.offTrack && !r.megaBoost && r.glide <= 0) { r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5); r.speed *= (1 - 1.1 * dt); }
+  if (inZone && inZone.type === 'bahno') r.speed = Math.min(r.speed, r.spec.topSpeed * 0.42);
+  else if (r.offTrack && !r.megaBoost && r.glide <= 0 && !shortcut) { r.speed = Math.min(r.speed, r.spec.topSpeed * 0.5); r.speed *= (1 - 1.1 * dt); }
+
+  // riziko v zóně – občasná událost (kousnutí raptora, charge T-Rexe, zakopnutí)
+  if (shortcut && r.down <= 0 && r.glide <= 0) {
+    r.zoneTimer -= dt;
+    if (r.zoneTimer <= 0) { r.zoneTimer = 0.7 + Math.random() * 0.6; zoneHazard(r, inZone.type); }
+  } else r.zoneTimer = 0.5;
 
   const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
   r.pos.addScaledVector(fwd, r.speed * dt);

@@ -48,6 +48,17 @@ V menu zvol **1 hráč** nebo **2 hráči (split-screen)**, **svět** a vyber di
 - **Catch-up**: kdo je vzadu, losuje silnější předměty.
 - Zásahy mají **knockback** a **screen shake**.
 
+## Danger zóny (risk/reward)
+
+Na každé mapě jsou 4 barevné zóny:
+
+- 🪹 **Raptoří hnízdo** – zkratka, ale uvnitř tě kouše raptor (poškození)
+- 🦖 **T-Rex teritorium** – zkratka, ale charge T-Rexe (poškození + odhození)
+- 🟫 **Bahno** – bezpečné, ale výrazně zpomaluje
+- 🪨 **Skály** – rychlá zkratka, ale hrozí zakopnutí (smyk)
+
+Zkratkové zóny obejdou penalizaci za jízdu mimo trať – riskuješ poškození za úsporu času.
+
 Závodí **7 dinosaurů**. Navíc kolem číhají **3 nesmyslně agresivní raptoři** – ti
 **nejsou závodníci** (nepočítají se do pořadí). Po startu mají pár vteřin **spánek**,
 pak: dokud je hráč **první**, přiběhnou hyper-boostem (~780 km/h) a otravují ho –

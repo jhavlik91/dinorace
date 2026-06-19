@@ -167,12 +167,45 @@ export function buildWorld(scene, mapKey = 'city') {
   else if (map.theme === 'playground') playgroundProps(group, obstacles, rng, path, trackWidth);
   else cityProps(group, obstacles, rng, path, trackWidth);
 
+  // nebezpečné/risk-reward zóny
+  const zones = [
+    { type: 'hnizdo', x: map.rx * 0.78, z: 0, r: 15 },
+    { type: 'teritorium', x: -map.rx * 0.78, z: 0, r: 15 },
+    { type: 'bahno', x: 0, z: map.rz * 0.92, r: 13 },
+    { type: 'skaly', x: 0, z: -map.rz * 0.92, r: 13 },
+  ];
+  for (const z of zones) addZone(group, z);
+
   // světla
   const sun = new THREE.DirectionalLight(0xffffff, 2.2);
   sun.position.set(40, 80, 20); group.add(sun);
   group.add(new THREE.HemisphereLight(map.sky[1], 0x6a8a5a, 1.1));
 
-  return { group, path, trackWidth, obstacles, laps: map.laps };
+  return { group, path, trackWidth, obstacles, laps: map.laps, zones };
+}
+
+// vizuál danger zóny (barevný kruh + tematické rekvizity)
+function addZone(group, z) {
+  const col = { bahno: 0x6b4a2e, skaly: 0x9a958c, hnizdo: 0xcdb98a, teritorium: 0xb5564a }[z.type];
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(z.r, 30),
+    new THREE.MeshToonMaterial({ color: col, transparent: true, opacity: 0.92 }));
+  disc.rotation.x = -Math.PI / 2; disc.position.set(z.x, 0.04, z.z); group.add(disc);
+  const rnd = (s) => (Math.random() - 0.5) * s;
+  if (z.type === 'skaly') for (let i = 0; i < 8; i++) {
+    const a = Math.random() * 6.28, rr = Math.random() * z.r * 0.8, s = 1 + Math.random() * 1.8;
+    const rock = lmPart(new THREE.DodecahedronGeometry(s), 0x8d8576);
+    rock.position.set(z.x + Math.cos(a) * rr, s * 0.5, z.z + Math.sin(a) * rr); group.add(rock);
+  } else if (z.type === 'hnizdo') for (let i = 0; i < 7; i++) {
+    const a = Math.random() * 6.28, rr = Math.random() * z.r * 0.6;
+    const e = lmPart(new THREE.SphereGeometry(0.7, 10, 10), 0xefe2c0); e.scale.y = 1.3;
+    e.position.set(z.x + Math.cos(a) * rr, 0.7, z.z + Math.sin(a) * rr); group.add(e);
+  } else if (z.type === 'teritorium') for (let i = 0; i < 7; i++) {
+    const fp = new THREE.Mesh(new THREE.CircleGeometry(1.2, 12), new THREE.MeshBasicMaterial({ color: 0x6e2a23 }));
+    fp.rotation.x = -Math.PI / 2; fp.position.set(z.x + rnd(z.r * 1.3), 0.05, z.z + rnd(z.r * 1.3)); group.add(fp);
+  } else for (let i = 0; i < 5; i++) {
+    const b = new THREE.Mesh(new THREE.CircleGeometry(2 + Math.random() * 2, 12), new THREE.MeshToonMaterial({ color: 0x5a3d24 }));
+    b.rotation.x = -Math.PI / 2; b.position.set(z.x + rnd(z.r), 0.05, z.z + rnd(z.r)); group.add(b);
+  }
 }
 
 // ---------- téma: město ----------
